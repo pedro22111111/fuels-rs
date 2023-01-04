@@ -10,7 +10,7 @@ use itertools::{chain, Itertools};
 use std::collections::HashSet;
 use std::{iter, vec};
 
-use crate::contract::ContractCall;
+use crate::contract::{CallableDebug};
 
 #[derive(Default)]
 /// Specifies offsets of [`Opcode::CALL`] parameters stored in the script
@@ -23,7 +23,7 @@ pub(crate) struct CallOpcodeParamsOffset {
 }
 
 /// Compute how much of each asset is required based on all `CallParameters` of the `ContractCalls`
-pub(crate) fn calculate_required_asset_amounts(calls: &[ContractCall]) -> Vec<(AssetId, u64)> {
+pub(crate) fn calculate_required_asset_amounts(calls: &[Box<dyn CallableDebug>]) -> Vec<(AssetId, u64)> {
     let amounts_per_asset_id = calls
         .iter()
         .map(|call| (call.call_parameters.asset_id, call.call_parameters.amount))
@@ -50,7 +50,7 @@ fn sum_up_amounts_for_each_asset_id(
 
 /// Given a list of contract calls, create the actual opcodes used to call the contract
 pub(crate) fn get_instructions(
-    calls: &[ContractCall],
+    calls: &[Box<dyn CallableDebug>],
     offsets: Vec<CallOpcodeParamsOffset>,
 ) -> Vec<u8> {
     let num_calls = calls.len();
@@ -74,7 +74,7 @@ pub(crate) fn get_instructions(
 /// 6. Calldata offset (optional) `(1 * `[`WORD_SIZE`]`)`
 /// 7. Encoded arguments (optional) (variable length)
 pub(crate) fn build_script_data_from_contract_calls(
-    calls: &[ContractCall],
+    calls: &[Box<dyn CallableDebug>],
     data_offset: usize,
     gas_limit: u64,
 ) -> (Vec<u8>, Vec<CallOpcodeParamsOffset>) {
@@ -101,15 +101,15 @@ pub(crate) fn build_script_data_from_contract_calls(
         let gas_forwarded = call.call_parameters.gas_forwarded.unwrap_or(gas_limit);
         script_data.extend(gas_forwarded.to_be_bytes());
 
-        script_data.extend(call.contract_id.hash().as_ref());
+        script_data.extend(call.contract_id().hash().as_ref());
 
-        script_data.extend(call.encoded_selector);
+        script_data.extend(call.encoded_selector());
 
         // If the method call takes custom inputs or has more than
         // one argument, we need to calculate the `call_data_offset`,
         // which points to where the data for the custom types start in the
         // transaction. If it doesn't take any custom inputs, this isn't necessary.
-        let encoded_args_start_offset = if call.compute_custom_input_offset {
+        let encoded_args_start_offset = if call.compute_custom_input_offset() {
             // Custom inputs are stored after the previously added parameters,
             // including custom_input_offset
             let custom_input_offset =
@@ -120,7 +120,7 @@ pub(crate) fn build_script_data_from_contract_calls(
             segment_offset
         };
 
-        let bytes = call.encoded_args.resolve(encoded_args_start_offset as u64);
+        let bytes = call.encoded_args().resolve(encoded_args_start_offset as u64);
         script_data.extend(bytes);
 
         // the data segment that holds the parameters for the next call
@@ -160,7 +160,7 @@ pub(crate) fn get_single_call_instructions(offsets: &CallOpcodeParamsOffset) -> 
 /// Returns the assets and contracts that will be consumed ([`Input`]s)
 /// and created ([`Output`]s) by the transaction
 pub(crate) fn get_transaction_inputs_outputs(
-    calls: &[ContractCall],
+    calls: &[Box<dyn CallableDebug>],
     wallet_address: &Bech32Address,
     spendable_resources: Vec<Resource>,
 ) -> (Vec<Input>, Vec<Output>) {
@@ -198,18 +198,18 @@ fn extract_unique_asset_ids(spendable_coins: &[Resource]) -> HashSet<AssetId> {
         .collect()
 }
 
-fn extract_variable_outputs(calls: &[ContractCall]) -> Vec<Output> {
+fn extract_variable_outputs(calls: &[Box<dyn CallableDebug>]) -> Vec<Output> {
     calls
         .iter()
-        .filter_map(|call| call.variable_outputs.clone())
+        .filter_map(|call| call.variable_outputs().clone())
         .flatten()
         .collect()
 }
 
-fn extract_message_outputs(calls: &[ContractCall]) -> Vec<Output> {
+fn extract_message_outputs(calls: &[Box<dyn CallableDebug>]) -> Vec<Output> {
     calls
         .iter()
-        .filter_map(|call| call.message_outputs.clone())
+        .filter_map(|call| call.message_outputs().clone())
         .flatten()
         .collect()
 }
@@ -272,14 +272,14 @@ fn generate_contract_inputs(contract_ids: HashSet<ContractId>) -> Vec<Input> {
         .collect()
 }
 
-fn extract_unique_contract_ids(calls: &[ContractCall]) -> HashSet<ContractId> {
+fn extract_unique_contract_ids(calls: &[Box<dyn CallableDebug>]) -> HashSet<ContractId> {
     calls
         .iter()
         .flat_map(|call| {
-            call.external_contracts
+            call.external_contracts()
                 .iter()
                 .map(|bech32| bech32.into())
-                .chain(iter::once((&call.contract_id).into()))
+                .chain(iter::once((&call.contract_id()).into()))
         })
         .collect()
 }
@@ -295,6 +295,7 @@ mod test {
     use fuels_types::param_types::ParamType;
     use rand::Rng;
     use std::slice;
+    use crate::contract::Callable;
 
     impl ContractCall {
         pub fn new_with_random_id() -> Self {

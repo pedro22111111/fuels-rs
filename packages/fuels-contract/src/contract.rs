@@ -327,9 +327,163 @@ impl Contract {
     }
 }
 
+fn is_missing_output_variables(receipts: &[Receipt]) -> bool {
+    receipts.iter().any(
+        |r| matches!(r, Receipt::Revert { ra, .. } if *ra == FAILED_TRANSFER_TO_ADDRESS_SIGNAL),
+    )
+}
+
+fn find_contract_not_in_inputs(receipts: &[Receipt]) -> Option<&Receipt> {
+    receipts.iter().find(
+        |r| matches!(r, Receipt::Panic { reason, .. } if *reason.reason() == PanicReason::ContractNotInInputs ),
+    )
+}
+
+pub trait Callable {
+    fn with_contract_id(self, contract_id: Bech32ContractId) -> Box<dyn Callable>;
+
+    fn with_external_contracts(self, external_contracts: Vec<Bech32ContractId>) -> Box<dyn Callable>;
+
+    fn with_variable_outputs(self, variable_outputs: Vec<Output>) -> Box<dyn Callable>;
+
+    fn with_message_outputs(self, message_outputs: Vec<Output>) -> Box<dyn Callable>;
+
+    fn variable_outputs(&mut self) -> &mut Option<Vec<Output>>;
+
+    fn message_outputs(&mut self) -> &mut Option<Vec<Output>>;
+
+    fn external_contracts(&mut self) -> &mut Vec<Bech32ContractId>;
+
+    fn contract_id(self) -> Bech32ContractId;
+
+    fn encoded_args(self) -> UnresolvedBytes;
+
+    fn encoded_selector(self) -> Selector;
+
+    fn compute_custom_input_offset(self) -> bool;
+
+    fn output_param(self) -> ParamType;
+    
+    fn append_variable_outputs(&mut self, num: u64) {
+        let new_variable_outputs = vec![
+            Output::Variable {
+                amount: 0,
+                to: Address::zeroed(),
+                asset_id: AssetId::default(),
+            };
+            num as usize
+        ];
+
+        match self.variable_outputs() {
+            Some(ref mut outputs) => outputs.extend(new_variable_outputs),
+            None => *self.variable_outputs() = Some(new_variable_outputs),
+        }
+    }
+
+    fn append_external_contracts(&mut self, contract_id: Bech32ContractId) {
+        self.external_contracts().push(contract_id)
+    }
+
+    fn append_message_outputs(&mut self, num: u64) {
+        let new_message_outputs = vec![
+            Output::Message {
+                recipient: Address::zeroed(),
+                amount: 0,
+            };
+            num as usize
+        ];
+
+        match self.message_outputs() {
+            Some(ref mut outputs) => outputs.extend(new_message_outputs),
+            None => *self.message_outputs() = Some(new_message_outputs),
+        }
+    }
+}
+
+pub trait CallableDebug: Callable + Debug {}
+
 #[derive(Debug)]
 /// Contains all data relevant to a single contract call
 pub struct ContractCall {
+    pub contract_id: Bech32ContractId,
+    pub encoded_args: UnresolvedBytes,
+    pub encoded_selector: Selector,
+    pub forwarded_gas: Option<u64>,
+    pub compute_custom_input_offset: bool,
+    pub variable_outputs: Option<Vec<Output>>,
+    pub message_outputs: Option<Vec<Output>>,
+    pub external_contracts: Vec<Bech32ContractId>,
+    pub output_param: ParamType,
+}
+
+impl Callable for ContractCall {
+    fn with_contract_id(self, contract_id: Bech32ContractId) -> Box<(dyn Callable + 'static)> {
+        Box::new(ContractCall {
+            contract_id,
+            ..self
+        })
+    }
+
+    fn with_external_contracts(
+        self,
+        external_contracts: Vec<Bech32ContractId>,
+    ) -> Box<(dyn Callable + 'static)> {
+        Box::new(ContractCall {
+            external_contracts,
+            ..self
+        })
+    }
+
+    fn with_variable_outputs(self, variable_outputs: Vec<Output>) -> Box<(dyn Callable + 'static)> {
+        Box::new(ContractCall {
+            variable_outputs: Some(variable_outputs),
+            ..self
+        })
+    }
+
+    fn with_message_outputs(self, message_outputs: Vec<Output>) -> Box<(dyn Callable + 'static)> {
+        Box::new(ContractCall {
+            message_outputs: Some(message_outputs),
+            ..self
+        })
+    }
+
+    fn variable_outputs(&mut self) -> &mut Option<Vec<Output>> {
+        &mut self.variable_outputs
+    }
+
+    fn message_outputs(&mut self) -> &mut Option<Vec<Output>> {
+        &mut self.message_outputs
+    }
+
+    fn external_contracts(&mut self) -> &mut Vec<Bech32ContractId> {
+        &mut self.external_contracts
+    }
+
+    fn contract_id(self) -> Bech32ContractId {
+        self.contract_id
+    }
+
+    fn encoded_args(self) -> UnresolvedBytes {
+        self.encoded_args
+    }
+
+    fn encoded_selector(self) -> Selector {
+        self.encoded_selector
+    }
+
+    fn compute_custom_input_offset(self) -> bool {
+        self.compute_custom_input_offset
+    }
+
+    fn output_param(self) -> ParamType {
+        self.output_param
+    }
+}
+
+#[derive(Debug)]
+/// Contains all data relevant to a single contract call
+pub struct PayableContractCall {
     pub contract_id: Bech32ContractId,
     pub encoded_args: UnresolvedBytes,
     pub encoded_selector: Selector,
@@ -341,90 +495,68 @@ pub struct ContractCall {
     pub output_param: ParamType,
 }
 
-impl ContractCall {
-    pub fn with_contract_id(self, contract_id: Bech32ContractId) -> Self {
-        ContractCall {
+impl Callable for PayableContractCall {
+    fn with_contract_id(self, contract_id: Bech32ContractId) -> Box<(dyn Callable + 'static)> {
+        Box::new(PayableContractCall {
             contract_id,
             ..self
-        }
+        })
     }
 
-    pub fn with_external_contracts(
+    fn with_external_contracts(
         self,
         external_contracts: Vec<Bech32ContractId>,
-    ) -> ContractCall {
-        ContractCall {
+    ) -> Box<(dyn Callable + 'static)> {
+        Box::new(PayableContractCall {
             external_contracts,
             ..self
-        }
+        })
     }
 
-    pub fn with_variable_outputs(self, variable_outputs: Vec<Output>) -> ContractCall {
-        ContractCall {
+    fn with_variable_outputs(self, variable_outputs: Vec<Output>) -> Box<(dyn Callable + 'static)> {
+        Box::new(PayableContractCall {
             variable_outputs: Some(variable_outputs),
             ..self
-        }
+        })
     }
 
-    pub fn with_message_outputs(self, message_outputs: Vec<Output>) -> ContractCall {
-        ContractCall {
+    fn with_message_outputs(self, message_outputs: Vec<Output>) -> Box<(dyn Callable + 'static)> {
+        Box::new(PayableContractCall {
             message_outputs: Some(message_outputs),
             ..self
-        }
+        })
     }
 
-    pub fn with_call_parameters(self, call_parameters: CallParameters) -> ContractCall {
-        ContractCall {
-            call_parameters,
-            ..self
-        }
+    fn variable_outputs(&mut self) -> &mut Option<Vec<Output>> {
+        &mut self.variable_outputs
     }
 
-    pub fn append_variable_outputs(&mut self, num: u64) {
-        let new_variable_outputs = vec![
-            Output::Variable {
-                amount: 0,
-                to: Address::zeroed(),
-                asset_id: AssetId::default(),
-            };
-            num as usize
-        ];
-
-        match self.variable_outputs {
-            Some(ref mut outputs) => outputs.extend(new_variable_outputs),
-            None => self.variable_outputs = Some(new_variable_outputs),
-        }
+    fn message_outputs(&mut self) -> &mut Option<Vec<Output>> {
+        &mut self.message_outputs
     }
 
-    pub fn append_external_contracts(&mut self, contract_id: Bech32ContractId) {
-        self.external_contracts.push(contract_id)
+    fn external_contracts(&mut self) -> &mut Vec<Bech32ContractId> {
+        &mut self.external_contracts
     }
 
-    pub fn append_message_outputs(&mut self, num: u64) {
-        let new_message_outputs = vec![
-            Output::Message {
-                recipient: Address::zeroed(),
-                amount: 0,
-            };
-            num as usize
-        ];
-
-        match self.message_outputs {
-            Some(ref mut outputs) => outputs.extend(new_message_outputs),
-            None => self.message_outputs = Some(new_message_outputs),
-        }
+    fn contract_id(self) -> Bech32ContractId {
+        self.contract_id
     }
 
-    fn is_missing_output_variables(receipts: &[Receipt]) -> bool {
-        receipts.iter().any(
-            |r| matches!(r, Receipt::Revert { ra, .. } if *ra == FAILED_TRANSFER_TO_ADDRESS_SIGNAL),
-        )
+    fn encoded_args(self) -> UnresolvedBytes {
+        self.encoded_args
     }
 
-    fn find_contract_not_in_inputs(receipts: &[Receipt]) -> Option<&Receipt> {
-        receipts.iter().find(
-            |r| matches!(r, Receipt::Panic { reason, .. } if *reason.reason() == PanicReason::ContractNotInInputs ),
-        )
+    fn encoded_selector(self) -> Selector {
+        self.encoded_selector
+    }
+
+    fn compute_custom_input_offset(self) -> bool {
+        self.compute_custom_input_offset
+    }
+
+    fn output_param(self) -> ParamType {
+        self.output_param
     }
 }
 
@@ -486,7 +618,7 @@ pub fn get_decoded_output(
 #[must_use = "contract calls do nothing unless you `call` them"]
 /// Helper that handles submitting a call to a client and formatting the response
 pub struct ContractCallHandler<D> {
-    pub contract_call: ContractCall,
+    pub contract_call: Box<dyn CallableDebug>,
     pub tx_parameters: TxParameters,
     pub wallet: WalletUnlocked,
     pub provider: Provider,
@@ -510,7 +642,7 @@ where
     /// [`Input::Contract`]: fuel_tx::Input::Contract
     /// [`Output::Contract`]: fuel_tx::Output::Contract
     pub fn set_contracts(mut self, contract_ids: &[Bech32ContractId]) -> Self {
-        self.contract_call.external_contracts = contract_ids.to_vec();
+        *self.contract_call.external_contracts() = contract_ids.to_vec();
         self
     }
 
@@ -551,7 +683,7 @@ where
     /// my_contract_instance.my_method(...).call_params(params).call()
     /// ```
     pub fn call_params(mut self, params: CallParameters) -> Self {
-        self.contract_call.call_parameters = params;
+        self.contract_call.call_parameters() = params;
         self
     }
 
@@ -649,13 +781,13 @@ where
 
             match result {
                 Err(Error::RevertTransactionError(_, receipts))
-                    if ContractCall::is_missing_output_variables(&receipts) =>
+                    if is_missing_output_variables(&receipts) =>
                 {
                     self = self.append_variable_outputs(1);
                 }
 
                 Err(Error::RevertTransactionError(_, ref receipts)) => {
-                    if let Some(receipt) = ContractCall::find_contract_not_in_inputs(receipts) {
+                    if let Some(receipt) = find_contract_not_in_inputs(receipts) {
                         let contract_id = Bech32ContractId::from(*receipt.contract_id().unwrap());
                         self = self.append_contract(contract_id);
                     } else {
@@ -694,8 +826,8 @@ where
     pub fn get_response(&self, mut receipts: Vec<Receipt>) -> Result<FuelCallResponse<D>, Error> {
         let token = get_decoded_output(
             &mut receipts,
-            Some(&self.contract_call.contract_id),
-            &self.contract_call.output_param,
+            Some(&self.contract_call.contract_id()),
+            &self.contract_call.output_param(),
         )?;
         Ok(FuelCallResponse::new(
             D::from_token(token)?,
@@ -709,7 +841,7 @@ where
 #[must_use = "contract calls do nothing unless you `call` them"]
 /// Helper that handles bundling multiple calls into a single transaction
 pub struct MultiContractCallHandler {
-    pub contract_calls: Vec<ContractCall>,
+    pub contract_calls: Vec<Box<dyn CallableDebug>>,
     pub log_decoder: LogDecoder,
     pub tx_parameters: TxParameters,
     pub wallet: WalletUnlocked,
@@ -814,7 +946,7 @@ impl MultiContractCallHandler {
 
             match result {
                 Err(Error::RevertTransactionError(_, receipts))
-                    if ContractCall::is_missing_output_variables(&receipts) =>
+                    if is_missing_output_variables(&receipts) =>
                 {
                     self.contract_calls
                         .iter_mut()
@@ -823,7 +955,7 @@ impl MultiContractCallHandler {
                 }
 
                 Err(Error::RevertTransactionError(_, ref receipts)) => {
-                    if let Some(receipt) = ContractCall::find_contract_not_in_inputs(receipts) {
+                    if let Some(receipt) = find_contract_not_in_inputs(receipts) {
                         let contract_id = Bech32ContractId::from(*receipt.contract_id().unwrap());
                         self.contract_calls
                             .iter_mut()
@@ -867,7 +999,7 @@ impl MultiContractCallHandler {
 
         for call in self.contract_calls.iter() {
             let decoded =
-                get_decoded_output(&mut receipts, Some(&call.contract_id), &call.output_param)?;
+                get_decoded_output(&mut receipts, Some(&call.contract_id()), &call.output_param())?;
 
             final_tokens.push(decoded.clone());
         }

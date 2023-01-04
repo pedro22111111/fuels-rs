@@ -13,7 +13,7 @@ use fuels_types::errors::Error;
 
 use std::vec;
 
-use crate::contract::ContractCall;
+use crate::contract::CallableDebug;
 use crate::contract_calls_utils::{
     build_script_data_from_contract_calls, calculate_required_asset_amounts, get_instructions,
     get_transaction_inputs_outputs,
@@ -35,7 +35,7 @@ impl ExecutableFuelCall {
     /// initialized with the actual script instructions, script data needed to perform the call and
     /// transaction inputs/outputs consisting of assets and contracts.
     pub async fn from_contract_calls(
-        calls: &[ContractCall],
+        calls: &[Box<dyn CallableDebug>],
         tx_parameters: &TxParameters,
         wallet: &WalletUnlocked,
     ) -> Result<Self, Error> {
