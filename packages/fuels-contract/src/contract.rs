@@ -614,13 +614,12 @@ where
     }
 
     /// Returns the script that executes the contract call
-    pub async fn get_executable_call(&self) -> Result<ExecutableFuelCall, Error> {
-        ExecutableFuelCall::from_contract_calls(
+    pub async fn get_executable_call(&self) -> ExecutableFuelCall {
+        ExecutableFuelCall {
             std::slice::from_ref(&self.contract_call),
             &self.tx_parameters,
             &self.wallet,
-        )
-        .await
+        }
     }
 
     /// Call a contract's method on the node, in a state-modifying manner.
