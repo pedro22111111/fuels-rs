@@ -3,12 +3,14 @@ use fuel_gql_client::fuel_types::{Immediate18, Word};
 use fuel_gql_client::fuel_vm::{consts::REG_ONE, prelude::Opcode};
 use fuel_tx::{AssetId, Bytes32, ContractId};
 use fuels_core::constants::BASE_ASSET_ID;
+use fuels_signers::WalletUnlocked;
 use fuels_types::bech32::Bech32Address;
 use fuels_types::constants::WORD_SIZE;
 use fuels_types::resource::Resource;
 use itertools::Itertools;
 use std::collections::HashSet;
 use std::{iter, vec};
+use fuels_types::errors::Error;
 
 use crate::contract::ContractCall;
 
@@ -251,6 +253,41 @@ pub fn extract_unique_contract_ids(calls: &[ContractCall]) -> HashSet<ContractId
                 .chain(iter::once((&call.contract_id).into()))
         })
         .collect()
+}
+
+pub async fn fill_amount_for_asset(target_amount: u64, target_asset_id: AssetId, available_inputs: Vec<Input>, wallet: &WalletUnlocked) -> Result<Vec<Resource>, Error>{
+    let target_asset_inputs = available_inputs
+        .iter()
+        .filter_map(|input| {
+            match input {
+                Input::CoinSigned { asset_id , ..} =>  if *input.asset_id().unwrap() == target_asset_id {
+                   return Some(input)
+                } else {
+                    return None
+                },
+                Input::MessageSigned { amount, .. } => {
+                    if target_asset_id == BASE_ASSET_ID {
+                        return Some(input)
+                    } else {
+                        return None    
+                    }
+                },
+                _ => None
+            }
+    });
+
+    let available_inputs_sum: u64 = target_asset_inputs.map(|input| input.amount().unwrap()).sum();
+    let missing_amount = target_amount - available_inputs_sum;
+
+    if missing_amount > 0 {
+        let resources = wallet
+                .get_spendable_resources(target_asset_id, missing_amount)
+                .await?;
+        
+        return Ok(resources)
+    }
+
+    Ok(vec![])
 }
 
 #[cfg(test)]

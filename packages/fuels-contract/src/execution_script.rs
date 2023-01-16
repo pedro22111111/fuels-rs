@@ -15,7 +15,6 @@ use fuels_core::{offsets::call_script_data_offset, parameters::TxParameters};
 use fuels_signers::provider::Provider;
 use fuels_signers::{Signer, WalletUnlocked};
 
-use fuel_tx::field::{Inputs, Outputs};
 use fuels_core::tx::ContractId;
 use fuels_types::errors::Error;
 use itertools::chain;
@@ -37,8 +36,8 @@ pub struct ExecutableFuelCall {
     pub(crate) tx: fuels_core::tx::Script,
     pub(crate) prepared_assets: CallsPreparedAssets,
     pub(crate) wallet: WalletUnlocked,
-    pub(crate) inputs: Vec<Input>,
-    pub(crate) outputs: Vec<Output>,
+    pub(crate) custom_inputs: Vec<Input>,
+    pub(crate) custom_outputs: Vec<Output>,
 }
 
 #[derive(Debug, Default)]
@@ -91,22 +90,14 @@ impl ExecutableFuelCall {
         Ok(PrepareExecutableFuelCall::new(tx, calls, wallet.clone()))
     }
 
-    pub fn add_input(&mut self, input: Input) -> &mut ExecutableFuelCall {
-        self.inputs.extend(input);
+    pub fn add_inputs(&mut self, inputs: &[Input]) -> &mut ExecutableFuelCall {
+        self.custom_inputs.extend(inputs);
         self
     }
 
-    pub fn add_output(&mut self, outputs: Output) -> &mut ExecutableFuelCall {
-        self.outputs.extend(outputs);
+    pub fn add_outputs(&mut self, outputs: &[Output]) -> &mut ExecutableFuelCall {
+        self.custom_outputs.extend(outputs);
         self
-    }
-
-    /// This function creates an [`ExecutableFuelCall`] from a [`PrepareExecutableFuelCall`], which avoids
-    /// the possibility of duplication of inputs and outputs.
-    /// For this reason, we strongly recommend the use of this function
-    pub async fn prepare(&mut self) -> Result<ExecutableFuelCall, Error> {
-        Self::prepare_inputs_outputs(self).await?;
-        Ok(ExecutableFuelCall::new(self.tx.clone()))
     }
 
     pub async fn prepare_inputs_outputs(
@@ -114,28 +105,18 @@ impl ExecutableFuelCall {
     ) -> Result<(), Error> {
         let mut spendable_resources = vec![];
 
-        let user_inputs = script
-            .tx
-            .inputs()
+        let (user_resource_inputs, user_other_inputs): (Vec<_>, Vec<_>) = script
+            .custom_inputs
             .iter()
-            .filter(|input|
-                {
-                    !matches!(input, Input::Contract { .. }) &&
-                        !matches!(input, Input::CoinPredicate { .. }) &&
-                        !matches!(input, Input::MessagePredicate { .. })
-                }
-            ).map(|values| (*values.asset_id().unwrap(), values.amount().unwrap()))
+            .partition(|input| matches!(input, Input::MessageSigned { .. }) || matches!(input, Input::CoinSigned { .. }))
+        
+        let user_aset_amounts = user_resource_inputs
+            .iter()
+            .map(|values| (*values.asset_id().unwrap(), values.amount().unwrap()))
             .collect::<Vec<_>>();
 
-        let (user_message_output, user_coin_output): (Vec<_>, Vec<_>) = script
-            .tx
-            .outputs()
-            .iter()
-            .cloned()
-            .partition(|input| matches!(input, Output::Message { .. }));
-
         let merged_inputs = sum_up_amounts_for_each_asset_id(
-            chain!(script.calls.required_asset_amounts.clone(), user_inputs).collect::<Vec<_>>(),
+            chain!(script.prepared_assets.required_asset_amounts.clone(), user_aset_amounts).collect::<Vec<_>>(),
         );
 
         for (asset_id, amount) in &merged_inputs {
@@ -166,7 +147,6 @@ impl ExecutableFuelCall {
             ),
             chain!(
                 script.calls.calls_message_outputs.clone(),
-                user_message_output
             ),
         )
             .collect::<Vec<Output>>();

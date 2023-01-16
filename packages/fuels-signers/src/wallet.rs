@@ -229,6 +229,22 @@ impl Wallet {
             .map_err(Into::into)
     }
 
+    /// Get some spendable resources (coins and messages) of asset `asset_id` owned by the wallet
+    /// that add up at least to amount `amount`. The returned coins (UTXOs) are actual coins that
+    /// can be spent. The number of UXTOs is optimized to prevent dust accumulation.
+    pub async fn get_spendable_resources_with_ignore(
+        &self,
+        asset_id: AssetId,
+        amount: u64,
+        excluded_ids: Option<(Vec<UtxoId>, Vec<MessageId>)>
+    ) -> Result<Vec<Resource>, Error> {
+        self.get_provider()?
+            .get_spendable_resources_with_ignore(&self.address, asset_id, amount, excluded_ids)
+            .await
+            .map_err(Into::into)
+    }
+
+
     /// Get the balance of all spendable coins `asset_id` for address `address`. This is different
     /// from getting coins because we are just returning a number (the sum of UTXOs amount) instead
     /// of the UTXOs.

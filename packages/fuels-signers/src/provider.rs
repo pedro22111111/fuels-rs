@@ -5,6 +5,8 @@ use fuel_core::service::{Config, FuelService};
 
 use crate::{field, UniqueIdentifier};
 use chrono::{DateTime, Duration, Utc};
+use fuel_types::MessageId;
+use fuel_tx::transaction::types::UtxoIdll;
 use fuel_gql_client::{
     client::{
         schema::{
@@ -269,6 +271,62 @@ impl Provider {
             .try_collect()?;
 
         Ok(res)
+    }
+
+    pub async fn get_spendable_resources_with_ignore(
+        &self,
+        from: &Bech32Address,
+        asset_id: AssetId,
+        amount: u64,
+        excluded_ids: Option<(Vec<UtxoId>, Vec<MessageId>)>,
+    ) -> Result<Vec<Resource>, ProviderError> {
+        use itertools::Itertools;
+
+        if let Some(ids) = excluded_ids {
+            let utxos_as_str = ids
+                .0
+                .iter()
+                .map(|utxo_id| format!("{:#x}", utxo_id))
+                .collect::<Vec<_>>();
+            let msg_ids_as_str = ids
+                .1
+                .iter()
+                .map(|msg_id| format!("{:#x}", msg_id))
+                .collect::<Vec<_>>();
+
+            let excluded_as_str = Some((
+                utxos_as_str
+                    .iter()
+                    .map(AsRef::as_ref)
+                    .collect::<Vec<&str>>(),
+                msg_ids_as_str
+                    .iter()
+                    .map(AsRef::as_ref)
+                    .collect::<Vec<&str>>(),
+            ));
+
+            /// TODO dedup with get_spendable resources
+            let res = self
+                .client
+                .resources_to_spend(
+                    &from.hash().to_string(),
+                    vec![(format!("{:#x}", asset_id).as_str(), amount, None)],
+                    excluded_as_str,
+                )
+                .await?
+                .into_iter()
+                .flatten()
+                .map(|resource| {
+                    let resource: Result<Resource, _> = resource.try_into();
+
+                    resource.map_err(ProviderError::ClientRequestError)
+                })
+                .try_collect()?;
+
+            return Ok(res);
+        }
+
+        self.get_spendable_resources(from, asset_id, amount).await
     }
 
     /// Get the balance of all spendable coins `asset_id` for address `address`. This is different
