@@ -34,40 +34,23 @@ use crate::contract_calls_utils::{
 ///
 #[derive(Debug)]
 pub struct ExecutableFuelCall {
-    pub tx: fuels_core::tx::Script,
-}
-
-#[derive(Debug)]
-pub struct PrepareExecutableFuelCall {
     pub(crate) tx: fuels_core::tx::Script,
-    pub(crate) calls: Calls,
+    pub(crate) prepared_assets: CallsPreparedAssets,
     pub(crate) wallet: WalletUnlocked,
     pub(crate) inputs: Vec<Input>,
     pub(crate) outputs: Vec<Output>,
 }
 
 #[derive(Debug, Default)]
-pub struct Calls {
+pub struct CallsPreparedAssets {
     pub required_asset_amounts: Vec<(AssetId, u64)>,
-    pub calls_contract_ids: HashSet<ContractId>,
-    pub calls_variable_outputs: Vec<Output>,
-    pub calls_message_outputs: Vec<Output>,
+    pub contract_ids: HashSet<ContractId>,
+    pub variable_outputs: Vec<Output>,
+    pub message_outputs: Vec<Output>,
 }
 
-impl PrepareExecutableFuelCall {
-    pub fn new(tx: fuels_core::tx::Script, calls: Calls, wallet: WalletUnlocked) -> Self {
-        Self {
-            tx,
-            calls,
-            wallet,
-            inputs: vec![],
-            outputs: vec![],
-        }
-    }
+impl ExecutableFuelCall {
 
-    /// Creates a [`PrepareExecutableFuelCall`] from contract calls. The internal [`Transaction`] is
-    /// initialized with the actual script instructions, script data needed to perform the call and
-    /// transaction inputs/outputs consisting of assets and contracts
     pub async fn from_contract_calls(
         calls: &[ContractCall],
         tx_parameters: &TxParameters,
@@ -98,22 +81,22 @@ impl PrepareExecutableFuelCall {
             vec![],
         );
 
-        let calls = Calls {
+        let calls = CallsPreparedAssets {
             required_asset_amounts: calculate_required_asset_amounts(calls),
-            calls_contract_ids: extract_unique_contract_ids(calls),
-            calls_variable_outputs: extract_variable_outputs(calls),
-            calls_message_outputs: extract_message_outputs(calls),
+            contract_ids: extract_unique_contract_ids(calls),
+            variable_outputs: extract_variable_outputs(calls),
+            message_outputs: extract_message_outputs(calls),
         };
 
         Ok(PrepareExecutableFuelCall::new(tx, calls, wallet.clone()))
     }
 
-    pub fn add_inputs(&mut self, inputs: Vec<Input>) -> &mut PrepareExecutableFuelCall {
-        self.inputs.extend(inputs);
+    pub fn add_input(&mut self, input: Input) -> &mut ExecutableFuelCall {
+        self.inputs.extend(input);
         self
     }
 
-    pub fn add_outputs(&mut self, outputs: Vec<Output>) -> &mut PrepareExecutableFuelCall {
+    pub fn add_output(&mut self, outputs: Output) -> &mut ExecutableFuelCall {
         self.outputs.extend(outputs);
         self
     }
@@ -127,25 +110,32 @@ impl PrepareExecutableFuelCall {
     }
 
     pub async fn prepare_inputs_outputs(
-        script: &mut PrepareExecutableFuelCall,
+        script: &mut ExecutableFuelCall,
     ) -> Result<(), Error> {
         let mut spendable_resources = vec![];
 
-        let script_inputs = script
-            .inputs
+        let user_inputs = script
+            .tx
+            .inputs()
             .iter()
-            .filter(|input| !matches!(input, Input::Contract { .. }))
-            .map(|values| (*values.asset_id().unwrap(), values.amount().unwrap()))
+            .filter(|input|
+                {
+                    !matches!(input, Input::Contract { .. }) &&
+                        !matches!(input, Input::CoinPredicate { .. }) &&
+                        !matches!(input, Input::MessagePredicate { .. })
+                }
+            ).map(|values| (*values.asset_id().unwrap(), values.amount().unwrap()))
             .collect::<Vec<_>>();
 
-        let (script_message_output, script_coin_output): (Vec<_>, Vec<_>) = script
-            .outputs
+        let (user_message_output, user_coin_output): (Vec<_>, Vec<_>) = script
+            .tx
+            .outputs()
             .iter()
             .cloned()
             .partition(|input| matches!(input, Output::Message { .. }));
 
         let merged_inputs = sum_up_amounts_for_each_asset_id(
-            chain!(script.calls.required_asset_amounts.clone(), script_inputs).collect::<Vec<_>>(),
+            chain!(script.calls.required_asset_amounts.clone(), user_inputs).collect::<Vec<_>>(),
         );
 
         for (asset_id, amount) in &merged_inputs {
@@ -161,7 +151,7 @@ impl PrepareExecutableFuelCall {
             generate_contract_inputs(script.calls.calls_contract_ids.clone()),
             convert_to_signed_resources(spendable_resources),
         )
-        .collect::<Vec<Input>>();
+            .collect::<Vec<Input>>();
 
         // Note the contract_outputs need to come first since the
         // contract_inputs are referencing them via `output_index`. The node
@@ -172,14 +162,14 @@ impl PrepareExecutableFuelCall {
             generate_asset_change_outputs(script.wallet.address(), asset_ids),
             chain!(
                 script.calls.calls_variable_outputs.clone(),
-                script_coin_output
+                user_coin_output
             ),
             chain!(
                 script.calls.calls_message_outputs.clone(),
-                script_message_output
+                user_message_output
             ),
         )
-        .collect::<Vec<Output>>();
+            .collect::<Vec<Output>>();
 
         let base_asset_amount = merged_inputs
             .iter()
@@ -200,15 +190,11 @@ impl PrepareExecutableFuelCall {
 
         Ok(())
     }
-}
 
-impl ExecutableFuelCall {
-    pub fn new(tx: fuels_core::tx::Script) -> Self {
-        Self { tx }
-    }
 
     /// Execute the transaction in a state-modifying manner.
     pub async fn execute(&self, provider: &Provider) -> Result<Vec<Receipt>, Error> {
+
         let chain_info = provider.chain_info().await?;
 
         self.tx.check_without_signatures(
