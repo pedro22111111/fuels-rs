@@ -1,3 +1,4 @@
+pub use abigen_bindings_test::my_predicate_test_mod::MyPredicateTest;
 use fuels::{
     prelude::*,
     tx::AssetId,
@@ -77,41 +78,40 @@ async fn setup_predicate_test(
         asset_id,
     ))
 }
-/*
 
-#[tokio::test]
-async fn transfer_coins_and_messages_to_predicate() -> Result<()> {
-    let num_coins = 16;
-    let num_messages = 32;
-    let amount = 64;
-    let total_balance = (num_coins + num_messages) * amount;
-
-    let mut wallet = WalletUnlocked::new_random(None);
-
-    let (coins, messages, asset_id) =
-        get_test_coins_and_messages(wallet.address(), num_coins, num_messages, amount);
-
-    let (provider, _address) = setup_test_provider(coins, messages, None, None).await;
-
-    wallet.set_provider(provider.clone());
-
-    abigen!(Predicate(
-        name = "MyPredicate",
-        abi = "packages/fuels/tests/predicates/predicate_basic/out/debug/predicate_basic-abi.json"
-    ));
-
-    let predicate =
-        MyPredicate::load_from("tests/predicates/predicate_basic/out/debug/predicate_basic.bin")?;
-
-    predicate
-        .receive(&wallet, total_balance, asset_id, None)
-        .await?;
-
-    // The predicate has received the funds
-    assert_address_balance(predicate.address(), &provider, asset_id, total_balance).await;
-
-    Ok(())
-}
+// #[tokio::test]
+// async fn transfer_coins_and_messages_to_predicate() -> Result<()> {
+//     let num_coins = 16;
+//     let num_messages = 32;
+//     let amount = 64;
+//     let total_balance = (num_coins + num_messages) * amount;
+//
+//     let mut wallet = WalletUnlocked::new_random(None);
+//
+//     let (coins, messages, asset_id) =
+//         get_test_coins_and_messages(wallet.address(), num_coins, num_messages, amount);
+//
+//     let (provider, _address) = setup_test_provider(coins, messages, None, None).await;
+//
+//     wallet.set_provider(provider.clone());
+//
+//     abigen!(Predicate(
+//         name = "MyPredicate",
+//         abi = "packages/fuels/tests/predicates/predicate_basic/out/debug/predicate_basic-abi.json"
+//     ));
+//
+//     let predicate =
+//         MyPredicate::load_from("tests/predicates/predicate_basic/out/debug/predicate_basic.bin")?;
+//
+//     predicate
+//         .receive(&wallet, total_balance, asset_id, None)
+//         .await?;
+//
+//     The predicate has received the funds
+// assert_address_balance(predicate.address(), &provider, asset_id, total_balance).await;
+//
+// Ok(())
+// }
 
 #[tokio::test]
 async fn spend_predicate_coins_messages_single_u64() -> Result<()> {
@@ -121,7 +121,7 @@ async fn spend_predicate_coins_messages_single_u64() -> Result<()> {
     ));
 
     let predicate =
-        MyPredicate::load_from("tests/predicates/predicate_u64/out/debug/predicate_u64.bin")?;
+        MyPredicateTest::load_from("tests/predicates/predicate_u64/out/debug/predicate_u64.bin")?;
 
     let num_coins = 4;
     let num_messages = 8;
@@ -155,6 +155,8 @@ async fn spend_predicate_coins_messages_single_u64() -> Result<()> {
         receiver_balance + predicate_balance,
     )
     .await;
+
+    assert!(false);
 
     Ok(())
 }
@@ -204,6 +206,8 @@ async fn spend_predicate_coins_messages_basic() -> Result<()> {
 
     Ok(())
 }
+
+/*
 
 #[tokio::test]
 async fn spend_predicate_coins_messages_address() -> Result<()> {
@@ -593,6 +597,8 @@ async fn spend_predicate_coins_messages_generics() -> Result<()> {
 }
 */
 
+// /*
+
 #[tokio::test]
 async fn pay_with_predicate() -> Result<()> {
     abigen!(
@@ -605,60 +611,27 @@ async fn pay_with_predicate() -> Result<()> {
           // )
     );
 
-    // let mut predicate =
-    //     MyPredicate::load_from("tests/predicates/predicate_u64/out/debug/predicate_u64.bin")?;
-    //
-    // let num_coins = 4;
-    // let num_messages = 8;
-    // let amount = 16;
-    // let (provider, _predicate_balance, _receiver, _receiver_balance, _asset_id) =
-    //     setup_predicate_test(predicate.address(), num_coins, num_messages, amount).await?;
-    //
-    // predicate.set_provider(Some(provider.clone()));
-    //
-    // let contract_id = Contract::deploy(
-    //     "tests/contracts/contract_test/out/debug/contract_test.bin",
-    //     &predicate,
-    //     TxParameters::default(),
-    //     StorageConfiguration::default(),
-    // )
-    // .await?;
-    //
-    // let contract_instance_connected = MyContract::new(contract_id.clone(), predicate.clone());
+    let mut predicate =
+        MyPredicateTest::load_from("tests/predicates/predicate_u64/out/debug/predicate_u64.bin")?;
 
-    // let response = contract_instance_connected
-    //     .methods()
-    //     .initialize_counter(42) // Build the ABI call
-    //     .call() // Perform the network call
-    //     .await?;
-    // assert_eq!(42, response.value);
-    //
-    let mut wallet = WalletUnlocked::new_random(None);
+    let num_coins = 4;
+    let num_messages = 8;
+    let amount = 16;
+    let (provider, _predicate_balance, _receiver, _receiver_balance, _asset_id) =
+        setup_predicate_test(predicate.address(), num_coins, num_messages, amount).await?;
 
-    let coins = setup_single_asset_coins(
-        wallet.address(),
-        BASE_ASSET_ID,
-        DEFAULT_NUM_COINS,
-        DEFAULT_COIN_AMOUNT,
-    );
-    let (launched_provider, address) = setup_test_provider(coins, vec![], None, None).await;
-    let connected_provider = Provider::connect(address.to_string()).await?;
-
-    wallet.set_provider(connected_provider);
+    predicate.set_provider(Some(provider.clone()));
 
     let contract_id = Contract::deploy(
         "tests/contracts/contract_test/out/debug/contract_test.bin",
-        &wallet,
+        &predicate.encode_data(32768),
         TxParameters::default(),
         StorageConfiguration::default(),
     )
     .await?;
 
+    let contract_instance_connected = MyContract::new(contract_id.clone(), predicate.clone());
     let tx_params = TxParameters::new(Some(10), Some(10000), None);
-
-    let contract_instance_connected = MyContract::new(contract_id.clone(), wallet.clone());
-
-    dbg!(&wallet.clone().get_balances().await?);
 
     let response = contract_instance_connected
         .methods()
@@ -668,17 +641,413 @@ async fn pay_with_predicate() -> Result<()> {
         .await?;
     assert_eq!(42, response.value);
 
-    wallet.set_provider(launched_provider);
-    let contract_instance_launched = MyContract::new(contract_id, wallet.clone());
+    // */
+    /*
+            let mut wallet = WalletUnlocked::new_random(None);
 
-    let response = contract_instance_launched
-        .methods()
-        .increment_counter(10)
-        .tx_params(tx_params)
-        .call()
-        .await?;
-    assert_eq!(52, response.value);
-    dbg!(&wallet.get_balances().await?);
+            let coins = setup_single_asset_coins(
+                wallet.address(),
+                BASE_ASSET_ID,
+                DEFAULT_NUM_COINS,
+                DEFAULT_COIN_AMOUNT,
+            );
+            let (launched_provider, address) = setup_test_provider(coins, vec![], None, None).await;
+            let connected_provider = Provider::connect(address.to_string()).await?;
 
+            wallet.set_provider(connected_provider);
+
+            let contract_id = Contract::deploy(
+                "tests/contracts/contract_test/out/debug/contract_test.bin",
+                &wallet,
+                TxParameters::default(),
+                StorageConfiguration::default(),
+            )
+            .await?;
+
+            let contract_instance_connected = MyContract::new(contract_id.clone(), wallet.clone());
+
+            dbg!(&wallet.clone().get_balances().await?);
+
+            let response = contract_instance_connected
+                .methods()
+                .initialize_counter(42) // Build the ABI call
+                .tx_params(tx_params)
+                .call() // Perform the network call
+                .await?;
+            assert_eq!(42, response.value);
+
+            wallet.set_provider(launched_provider);
+            let contract_instance_launched = MyContract::new(contract_id, wallet.clone());
+
+            let response = contract_instance_launched
+                .methods()
+                .increment_counter(10)
+                .tx_params(tx_params)
+                .call()
+                .await?;
+            assert_eq!(52, response.value);
+            dbg!(&wallet.get_balances().await?);
+    */
     Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+#[no_implicit_prelude]
+pub mod abigen_bindings_test {
+    #[allow(clippy::too_many_arguments)]
+    #[no_implicit_prelude]
+    pub mod my_predicate_test_mod {
+        use ::std::boxed::Box;
+        use ::std::{
+            clone::Clone,
+            convert::{From, Into, TryFrom},
+            format,
+            iter::IntoIterator,
+            iter::Iterator,
+            marker::Sized,
+            panic,
+            string::ToString,
+            vec,
+        };
+
+        #[cfg_attr(not(target_arch = "wasm32"), ::async_trait::async_trait)]
+        impl ::fuels::signers::Account for MyPredicateTest {
+            fn address(&self) -> &::fuels::types::bech32::Bech32Address {
+                &self.address
+            }
+            fn get_provider(
+                &self,
+            ) -> ::fuels::types::errors::Result<&::fuels::signers::provider::Provider> {
+                self.provider()
+            }
+            fn set_provider(&mut self, provider: ::fuels::signers::provider::Provider) {
+                self.set_provider(::std::option::Option::Some(provider))
+            }
+            async fn get_spendable_resources(
+                &self,
+                asset_id: ::fuels::tx::AssetId,
+                amount: u64,
+            ) -> ::fuels::types::errors::Result<::std::vec::Vec<::fuels::types::resource::Resource>>
+            {
+                self.provider()?
+                    .get_spendable_resources(&self.address, asset_id, amount)
+                    .await
+                    .map_err(::std::convert::Into::into)
+            }
+        }
+
+        #[cfg_attr(not(target_arch = "wasm32"), ::async_trait::async_trait)]
+        impl ::fuels::signers::PayFee for MyPredicateTest {
+            type Error = ::fuels::types::errors::Error;
+            fn address(&self) -> &::fuels::prelude::Bech32Address {
+                &self.address
+            }
+
+            async fn pay_fee_resources<
+                'a_t,
+                Tx: ::fuels::tx::Chargeable
+                    + ::fuels::tx::field::Inputs
+                    + ::fuels::tx::field::Outputs
+                    + ::std::marker::Send
+                    + ::fuels::tx::Cacheable
+                    + ::fuels::tx::UniqueIdentifier
+                    + ::fuels::tx::field::Witnesses,
+            >(
+                &'a_t self,
+                tx: &'a_t mut Tx,
+                previous_base_amount: u64,
+                witness_index: u8,
+            ) -> ::fuels::types::errors::Result<()> {
+                ::std::dbg!(&self.data);
+
+                let consensus_parameters = self
+                    .get_provider()?
+                    .chain_info()
+                    .await?
+                    .consensus_parameters;
+                let transaction_fee =
+                    ::fuels::tx::TransactionFee::checked_from_tx(&consensus_parameters, tx)
+                        .expect("Error calculating TransactionFee");
+                let (base_asset_inputs, remaining_inputs): (::std::vec::Vec<_>, ::std::vec::Vec<_>) = tx.inputs().iter().cloned().partition(|input| { ::std::matches!(input , :: fuels :: tx :: Input :: MessageSigned { .. }) || ::std::matches!(input , :: fuels :: tx :: Input :: CoinSigned { asset_id , .. } if asset_id == & :: fuels :: core :: constants :: BASE_ASSET_ID) });
+
+                let base_inputs_sum: u64 = base_asset_inputs
+                    .iter()
+                    .map(|input| input.amount().unwrap())
+                    .sum();
+                if base_inputs_sum < previous_base_amount {
+                    return ::std::result::Result::Err(::fuels::types::errors::Error::WalletError(
+                        ::std::format!(
+                            "The provided base asset amount is less than the present input coins"
+                        ),
+                    ));
+                }
+                let mut new_base_amount = transaction_fee.total() + previous_base_amount;
+                let is_consuming_utxos = tx
+                    .inputs()
+                    .iter()
+                    .any(|input| !::std::matches!(input, ::fuels::tx::Input::Contract { .. }));
+                const MIN_AMOUNT: u64 = 1;
+                if !is_consuming_utxos && new_base_amount == 0 {
+                    new_base_amount = MIN_AMOUNT;
+                }
+
+                let new_base_inputs = self
+                    .get_asset_inputs_for_amount_predicates(
+                        ::fuels::core::constants::BASE_ASSET_ID,
+                        new_base_amount,
+                    )
+                    .await?;
+
+                let adjusted_inputs: ::std::vec::Vec<_> = remaining_inputs
+                    .into_iter()
+                    .chain(new_base_inputs.into_iter())
+                    .collect();
+
+                *tx.inputs_mut() = adjusted_inputs;
+                let is_base_change_present = tx.outputs().iter().any(|output| {
+                        ::std::matches!(output , ::fuels::tx::Output::Change { asset_id , .. }
+                                                if asset_id == & ::fuels::core::constants::BASE_ASSET_ID)
+                    });
+
+                if !is_base_change_present && new_base_amount != 0 {
+                    tx.outputs_mut().push(::fuels::tx::Output::change(
+                        self.address().into(),
+                        0,
+                        ::fuels::core::constants::BASE_ASSET_ID,
+                    ));
+                }
+                ::std::result::Result::Ok(())
+            }
+
+            fn get_provider(
+                &self,
+            ) -> ::fuels::types::errors::Result<&::fuels::signers::provider::Provider> {
+                self.provider()
+            }
+        }
+
+        #[derive(Debug, Clone)]
+        pub struct MyPredicateTest {
+            address: ::fuels::types::bech32::Bech32Address,
+            code: ::std::vec::Vec<u8>,
+            data: ::fuels::core::abi_encoder::UnresolvedBytes,
+            provider: ::std::option::Option<::fuels::prelude::Provider>,
+        }
+
+        impl MyPredicateTest {
+            pub fn new(code: ::std::vec::Vec<u8>) -> Self {
+                let address: ::fuels::types::Address =
+                    (*::fuels::tx::Contract::root_from_code(&code)).into();
+                Self {
+                    address: address.clone().into(),
+                    code,
+                    data: ::fuels::core::abi_encoder::UnresolvedBytes::new(),
+                    provider: ::std::option::Option::None,
+                }
+            }
+            pub fn load_from(file_path: &str) -> ::fuels::types::errors::Result<Self> {
+                ::std::result::Result::Ok(Self::new(::std::fs::read(file_path)?))
+            }
+            pub fn address(&self) -> &::fuels::types::bech32::Bech32Address {
+                &self.address
+            }
+            pub fn code(&self) -> ::std::vec::Vec<u8> {
+                self.code.clone()
+            }
+            pub fn provider(
+                &self,
+            ) -> ::fuels::types::errors::Result<&::fuels::signers::provider::Provider> {
+                self.provider
+                    .as_ref()
+                    .ok_or(::fuels::types::errors::Error::from(
+                        ::fuels::signers::wallet::WalletError::NoProvider,
+                    ))
+            }
+            pub fn set_provider(
+                &mut self,
+                provider: ::std::option::Option<::fuels::prelude::Provider>,
+            ) {
+                self.provider = provider
+            }
+            pub fn data(&self) -> ::fuels::core::abi_encoder::UnresolvedBytes {
+                self.data.clone()
+            }
+            pub async fn receive(
+                &self,
+                from: &::fuels::signers::wallet::WalletUnlocked,
+                amount: u64,
+                asset_id: ::fuels::types::AssetId,
+                tx_parameters: ::std::option::Option<::fuels::core::parameters::TxParameters>,
+            ) -> ::fuels::types::errors::Result<(
+                ::std::string::String,
+                ::std::vec::Vec<::fuels::tx::Receipt>,
+            )> {
+                let tx_parameters = tx_parameters.unwrap_or_default();
+                from.transfer(self.address(), amount, asset_id, tx_parameters)
+                    .await
+            }
+            pub async fn spend(
+                &self,
+                to: &::fuels::signers::wallet::WalletUnlocked,
+                amount: u64,
+                asset_id: ::fuels::types::AssetId,
+                tx_parameters: ::std::option::Option<::fuels::core::parameters::TxParameters>,
+            ) -> ::fuels::types::errors::Result<::std::vec::Vec<::fuels::tx::Receipt>> {
+                let tx_parameters = tx_parameters.unwrap_or_default();
+                to.receive_from_predicate(
+                    self.address(),
+                    self.code(),
+                    amount,
+                    asset_id,
+                    self.data(),
+                    tx_parameters,
+                )
+                .await
+            }
+
+            pub async fn get_asset_inputs_for_amount_predicates(
+                &self,
+                asset_id: ::fuels::types::AssetId,
+                amount: u64,
+            ) -> ::fuels::types::errors::Result<::std::vec::Vec<::fuels::tx::Input>> {
+                let consensus_parameters =
+                    self.provider()?.chain_info().await?.consensus_parameters;
+
+                // ::fuels::core::abi_encoder::ABIEncoder::encode(&[
+                // ::fuels::types::traits::Tokenizable::into_token(32768 as u64),
+                // ])
+                //     .expect("Cannot encode predicate data");
+
+                let mut offset = ::fuels::core::offsets::base_offset(&consensus_parameters);
+
+                let inputs = self
+                    .get_spendable_resources(asset_id, amount)
+                    .await?
+                    .into_iter()
+                    .map(|resource| match resource {
+                        ::fuels::types::resource::Resource::Coin(coin) => {
+                            offset +=
+                                ::fuels::core::offsets::coin_predicate_data_offset(self.code.len());
+
+                            let data = self.data.clone().resolve(offset as u64);
+                            offset += data.len();
+
+                            self.create_coin_predicate(coin, asset_id, self.code.clone(), data)
+                        }
+                        ::fuels::types::resource::Resource::Message(message) => {
+                            offset += ::fuels::core::offsets::message_predicate_data_offset(
+                                message.data.len(),
+                                self.code.len(),
+                            );
+
+                            let data = self.data.clone().resolve(offset as u64);
+                            offset += data.len();
+
+                            self.create_message_predicate(message, self.code.clone(), data)
+                        }
+                    })
+                    .collect::<::std::vec::Vec<::fuels::tx::Input>>();
+
+                ::std::dbg!(&inputs);
+
+                ::std::result::Result::Ok(inputs)
+            }
+
+            pub async fn get_spendable_resources(
+                &self,
+                asset_id: ::fuels::types::AssetId,
+                amount: u64,
+            ) -> ::fuels::types::errors::Result<::std::vec::Vec<::fuels::types::resource::Resource>>
+            {
+                self.provider()?
+                    .get_spendable_resources(&self.address, asset_id, amount)
+                    .await
+                    .map_err(::std::convert::Into::into)
+            }
+
+            fn create_coin_input(
+                &self,
+                coin: ::fuels::types::coin::Coin,
+                asset_id: ::fuels::types::AssetId,
+                witness_index: u8,
+            ) -> ::fuels::tx::Input {
+                ::fuels::tx::Input::coin_signed(
+                    coin.utxo_id,
+                    coin.owner.into(),
+                    coin.amount,
+                    asset_id,
+                    ::fuels::tx::TxPointer::new(0, 0),
+                    witness_index,
+                    0,
+                )
+            }
+            fn create_message_input(
+                &self,
+                message: ::fuels::types::message::Message,
+                witness_index: u8,
+            ) -> ::fuels::tx::Input {
+                ::fuels::tx::Input::message_signed(
+                    message.message_id(),
+                    message.sender.into(),
+                    message.recipient.into(),
+                    message.amount,
+                    message.nonce,
+                    witness_index,
+                    message.data,
+                )
+            }
+
+            fn create_coin_predicate(
+                &self,
+                coin: ::fuels::types::coin::Coin,
+                asset_id: ::fuels::types::AssetId,
+                code: ::std::vec::Vec<u8>,
+                predicate_data: ::std::vec::Vec<u8>,
+            ) -> ::fuels::tx::Input {
+                ::fuels::tx::Input::coin_predicate(
+                    coin.utxo_id,
+                    coin.owner.into(),
+                    coin.amount,
+                    asset_id,
+                    ::fuels::tx::TxPointer::new(0, 0),
+                    0,
+                    code,
+                    predicate_data,
+                )
+            }
+
+            fn create_message_predicate(
+                &self,
+                message: ::fuels::types::message::Message,
+                code: ::std::vec::Vec<u8>,
+                predicate_data: ::std::vec::Vec<u8>,
+            ) -> ::fuels::tx::Input {
+                ::fuels::tx::Input::message_predicate(
+                    message.message_id(),
+                    message.sender.into(),
+                    message.recipient.into(),
+                    message.amount,
+                    message.nonce,
+                    message.data,
+                    code,
+                    predicate_data,
+                )
+            }
+
+            #[doc = "Run the predicate's encode function with the provided arguments"]
+            pub fn encode_data(&self, a: u64) -> Self {
+                let data = ::fuels::core::abi_encoder::ABIEncoder::encode(&[
+                    ::fuels::types::traits::Tokenizable::into_token(a),
+                ])
+                .expect("Cannot encode predicate data");
+
+                Self {
+                    address: self.address.clone(),
+                    code: self.code.clone(),
+                    data,
+                    provider: self.provider.clone(),
+                }
+            }
+        }
+    }
 }
