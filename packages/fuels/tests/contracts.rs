@@ -218,7 +218,7 @@ async fn test_contract_call_fee_estimation() -> Result<()> {
     let expected_min_gas_price = 0; // This is the default min_gas_price from the ConsensusParameters
     let expected_gas_used = 516;
     let expected_metered_bytes_size = 720;
-    let expected_total_fee = 340;
+    let expected_total_fee = 368;
 
     let estimated_transaction_cost = contract_instance
         .methods()
@@ -743,7 +743,7 @@ async fn test_output_variable_estimation_multicall() -> Result<()> {
     let amount = 1000;
 
     let mut multi_call_handler = MultiContractCallHandler::new(wallets[0].clone());
-    (0..2).for_each(|_| {
+    (0..3).for_each(|_| {
         let call_handler = contract_methods.mint_to_addresses(amount, addresses);
         multi_call_handler.add_call(call_handler);
     });
@@ -760,7 +760,7 @@ async fn test_output_variable_estimation_multicall() -> Result<()> {
 
     for wallet in wallets.iter() {
         let balance = wallet.get_asset_balance(&mint_asset_id).await?;
-        assert_eq!(balance, 2 * amount);
+        assert_eq!(balance, 3 * amount);
     }
 
     Ok(())
