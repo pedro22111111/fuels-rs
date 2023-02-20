@@ -685,7 +685,7 @@ where
     }
 
     /// Call a contract's method on the node, in a state-modifying manner.
-    pub async fn call(self) -> Result<FuelCallResponse<D>> {
+    pub async fn call(&self) -> Result<FuelCallResponse<D>> {
         Self::call_or_simulate(&self, false)
             .await
             .map_err(|err| map_revert_error(err, &self.log_decoder))
@@ -696,7 +696,7 @@ where
     /// It is the same as the [`call`] method because the API is more user-friendly this way.
     ///
     /// [`call`]: Self::call
-    pub async fn simulate(self) -> Result<FuelCallResponse<D>> {
+    pub async fn simulate(&self) -> Result<FuelCallResponse<D>> {
         Self::call_or_simulate(&self, true)
             .await
             .map_err(|err| map_revert_error(err, &self.log_decoder))
@@ -718,40 +718,36 @@ where
         let attempts = max_attempts.unwrap_or(DEFAULT_TX_DEP_ESTIMATION_ATTEMPTS);
 
         for _ in 0..attempts {
-            let result = self.simulate_without_decode().await;
-
-            match result {
-                Err(Error::RevertTransactionError { receipts, .. })
-                    if ContractCall::is_missing_output_variables(&receipts) =>
-                {
-                    self = self.append_variable_outputs(1);
-                }
-
-                Err(Error::RevertTransactionError { receipts, .. })
-                    if ContractCall::is_missing_message_output(&receipts) =>
-                {
-                    self = self.append_message_outputs(1);
-                }
-
+            match self.simulate_without_decode().await {
+                Ok(_) => return Ok(self),
                 Err(Error::RevertTransactionError { ref receipts, .. }) => {
-                    if let Some(receipt) = ContractCall::find_contract_not_in_inputs(receipts) {
-                        let contract_id = Bech32ContractId::from(*receipt.contract_id().unwrap());
-                        self = self.append_contract(contract_id);
-                    } else {
-                        return Err(result.expect_err("Couldn't estimate tx dependencies because we couldn't find the missing contract input"));
-                    }
+                    self = self.append_missing_outputs(receipts);
                 }
-
-                Err(e) => return Err(e),
-                _ => return Ok(self),
-            }
+                Err(other_error) => return Err(other_error),
+            };
         }
 
-        // confirm if successful or propagate error
-        match self.call_or_simulate(true).await {
-            Ok(_) => Ok(self),
-            Err(e) => Err(e),
+        self.simulate().await.map(|_| self)
+    }
+
+    fn append_missing_outputs(mut self, receipts: &[Receipt]) -> Self {
+        if ContractCall::is_missing_output_variables(receipts) {
+            self = self.append_variable_outputs(1)
         }
+        if ContractCall::is_missing_message_output(receipts) {
+            self = self.append_message_outputs(1);
+        }
+
+        if let Some(panic_receipt) = ContractCall::find_contract_not_in_inputs(receipts) {
+            let contract_id = Bech32ContractId::from(
+                *panic_receipt
+                    .contract_id()
+                    .expect("Panic receipt must contain contract id."),
+            );
+            self = self.append_contract(contract_id);
+        }
+
+        self
     }
 
     /// Get a contract's estimated cost
