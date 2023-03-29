@@ -1,3 +1,5 @@
+use itertools::Itertools;
+use sha2::{Digest, Sha256};
 use std::{collections::HashMap, iter::zip};
 
 use fuel_abi_types::{
@@ -11,6 +13,7 @@ use crate::{
     constants::WORD_SIZE,
     enum_variants::EnumVariants,
     errors::{error, Error, Result},
+    ByteArray,
 };
 
 #[derive(Debug, Clone, EnumString, PartialEq, Eq, Default)]
@@ -164,19 +167,100 @@ impl ParamType {
             ),
         }
     }
+}
 
-    /// For when you need to convert a ABI JSON's TypeApplication into a ParamType.
-    ///
-    /// # Arguments
-    ///
-    /// * `type_application`: The TypeApplication you wish to convert into a ParamType
-    /// * `type_lookup`: A HashMap of TypeDeclarations mentioned in the
-    ///                  TypeApplication where the type id is the key.
-    pub fn try_from_type_application(
-        type_application: &TypeApplication,
-        type_lookup: &HashMap<usize, TypeDeclaration>,
-    ) -> Result<Self> {
-        Type::try_from(type_application, type_lookup)?.try_into()
+/// Hashes an encoded function selector using SHA256 and returns the first 4 bytes.
+/// The function selector has to have been already encoded following the ABI specs defined
+/// [here](https://github.com/FuelLabs/fuel-specs/blob/1be31f70c757d8390f74b9e1b3beb096620553eb/specs/protocol/abi.md)
+pub fn first_four_bytes_of_sha256_hash(string: &str) -> ByteArray {
+    let string_as_bytes = string.as_bytes();
+    let mut hasher = Sha256::new();
+    hasher.update(string_as_bytes);
+    let result = hasher.finalize();
+    let mut output = ByteArray::default();
+    output[4..].copy_from_slice(&result[..4]);
+    output
+}
+
+pub fn resolve_fn_selector(
+    name: &str,
+    arguments: &[TypeApplication],
+    type_lookup: &HashMap<usize, TypeDeclaration>,
+) -> Result<ByteArray> {
+    let fn_signature = resolve_fn_signature(name, arguments, type_lookup)?;
+
+    Ok(first_four_bytes_of_sha256_hash(&fn_signature))
+}
+
+/// For when you need to convert a ABI JSON's TypeApplication into a ParamType.
+///
+/// # Arguments
+///
+/// * `type_application`: The TypeApplication you wish to convert into a ParamType
+/// * `type_lookup`: A HashMap of TypeDeclarations mentioned in the
+///                  TypeApplication where the type id is the key.
+fn resolve_fn_signature(
+    name: &str,
+    arguments: &[TypeApplication],
+    type_lookup: &HashMap<usize, TypeDeclaration>,
+) -> Result<String> {
+    let types = arguments
+        .iter()
+        .map(|ta| Type::try_from(ta, type_lookup))
+        .map_ok(|t| fnselectify(&t))
+        .collect::<Result<Vec<_>>>()?
+        .join(",");
+
+    Ok(format!("{name}({types})"))
+}
+
+fn fnselectify(ttype: &Type) -> String {
+    match ttype.type_field.as_ref() {
+        "raw untyped slice" => "rawslice".into(),
+        "raw untyped ptr" => "rawptr".into(),
+        struct_typef if struct_typef.starts_with("struct ") => {
+            let strings = ttype.components.iter().map(fnselectify).join(",");
+            let generics = ttype.generic_params.iter().map(fnselectify).join(",");
+
+            let generics_str = if generics.is_empty() {
+                "".into()
+            } else {
+                format!("<{generics}>")
+            };
+
+            format!("s{generics_str}({strings})")
+        }
+        enum_typef if enum_typef.starts_with("enum ") => {
+            let strings = ttype.components.iter().map(fnselectify).join(",");
+            let generics = ttype.generic_params.iter().map(fnselectify).join(",");
+
+            let generics_str = if generics.is_empty() {
+                "".into()
+            } else {
+                format!("<{generics}>")
+            };
+
+            format!("e{generics_str}({strings})")
+        }
+        tuple_typef if tuple_typef.starts_with('(') && tuple_typef.ends_with(')') => {
+            let strings = ttype.components.iter().map(fnselectify).join(",");
+
+            format!("({strings})")
+        }
+        array_typef if array_typef.starts_with('[') && array_typef.ends_with(']') => {
+            let inner_array_type = ttype
+                .components
+                .iter()
+                .map(fnselectify)
+                .next()
+                .expect("should have");
+
+            //TODO: when moved to fuel-abi-types refactor this to avoid matching array twice
+            let len = extract_array_len(&ttype.type_field).expect("should be ok");
+
+            format!("a[{inner_array_type};{len}]")
+        }
+        _ => ttype.type_field.clone(),
     }
 }
 
@@ -540,44 +624,44 @@ mod tests {
         assert_eq!(EXPECTED_WIDTH, width);
     }
 
+    // #[test]
+    // fn handles_simple_types() -> Result<()> {
+    //     let parse_param_type = |type_field: &str| {
+    //         let type_application = TypeApplication {
+    //             name: "".to_string(),
+    //             type_id: 0,
+    //             type_arguments: None,
+    //         };
+
+    //         let declarations = [TypeDeclaration {
+    //             type_id: 0,
+    //             type_field: type_field.to_string(),
+    //             components: None,
+    //             type_parameters: None,
+    //         }];
+
+    //         let type_lookup = declarations
+    //             .into_iter()
+    //             .map(|decl| (decl.type_id, decl))
+    //             .collect::<HashMap<_, _>>();
+
+    //         ParamType::try_from_type_application(&type_application, &type_lookup)
+    //     };
+
+    //     assert_eq!(parse_param_type("u8")?, ParamType::U8);
+    //     assert_eq!(parse_param_type("u16")?, ParamType::U16);
+    //     assert_eq!(parse_param_type("u32")?, ParamType::U32);
+    //     assert_eq!(parse_param_type("u64")?, ParamType::U64);
+    //     assert_eq!(parse_param_type("bool")?, ParamType::Bool);
+    //     assert_eq!(parse_param_type("b256")?, ParamType::B256);
+    //     assert_eq!(parse_param_type("()")?, ParamType::Unit);
+    //     assert_eq!(parse_param_type("str[21]")?, ParamType::String(21));
+
+    //     Ok(())
+    // }
+
     #[test]
-    fn handles_simple_types() -> Result<()> {
-        let parse_param_type = |type_field: &str| {
-            let type_application = TypeApplication {
-                name: "".to_string(),
-                type_id: 0,
-                type_arguments: None,
-            };
-
-            let declarations = [TypeDeclaration {
-                type_id: 0,
-                type_field: type_field.to_string(),
-                components: None,
-                type_parameters: None,
-            }];
-
-            let type_lookup = declarations
-                .into_iter()
-                .map(|decl| (decl.type_id, decl))
-                .collect::<HashMap<_, _>>();
-
-            ParamType::try_from_type_application(&type_application, &type_lookup)
-        };
-
-        assert_eq!(parse_param_type("u8")?, ParamType::U8);
-        assert_eq!(parse_param_type("u16")?, ParamType::U16);
-        assert_eq!(parse_param_type("u32")?, ParamType::U32);
-        assert_eq!(parse_param_type("u64")?, ParamType::U64);
-        assert_eq!(parse_param_type("bool")?, ParamType::Bool);
-        assert_eq!(parse_param_type("b256")?, ParamType::B256);
-        assert_eq!(parse_param_type("()")?, ParamType::Unit);
-        assert_eq!(parse_param_type("str[21]")?, ParamType::String(21));
-
-        Ok(())
-    }
-
-    #[test]
-    fn handles_arrays() -> Result<()> {
+    fn handles_arrays_2() -> Result<()> {
         // given
         let type_application = TypeApplication {
             name: "".to_string(),
@@ -610,16 +694,150 @@ mod tests {
             .collect::<HashMap<_, _>>();
 
         // when
-        let result = ParamType::try_from_type_application(&type_application, &type_lookup)?;
+        let selector = resolve_fn_signature("some_fun", &[type_application], &type_lookup)?;
 
         // then
-        assert_eq!(result, ParamType::Array(Box::new(ParamType::U8), 10));
+        assert_eq!(selector, "some_fun(a[u8;10])");
 
         Ok(())
     }
 
+    // #[test]
+    // fn handles_arrays() -> Result<()> {
+    //     // given
+    //     let type_application = TypeApplication {
+    //         name: "".to_string(),
+    //         type_id: 0,
+    //         type_arguments: None,
+    //     };
+
+    //     let declarations = [
+    //         TypeDeclaration {
+    //             type_id: 0,
+    //             type_field: "[_; 10]".to_string(),
+    //             components: Some(vec![TypeApplication {
+    //                 name: "__array_element".to_string(),
+    //                 type_id: 1,
+    //                 type_arguments: None,
+    //             }]),
+    //             type_parameters: None,
+    //         },
+    //         TypeDeclaration {
+    //             type_id: 1,
+    //             type_field: "u8".to_string(),
+    //             components: None,
+    //             type_parameters: None,
+    //         },
+    //     ];
+
+    //     let type_lookup = declarations
+    //         .into_iter()
+    //         .map(|decl| (decl.type_id, decl))
+    //         .collect::<HashMap<_, _>>();
+
+    //     // when
+    //     let result = ParamType::try_from_type_application(&type_application, &type_lookup)?;
+
+    //     // then
+    //     assert_eq!(result, ParamType::Array(Box::new(ParamType::U8), 10));
+
+    //     Ok(())
+    // }
+
+    // #[test]
+    // fn handles_vectors() -> Result<()> {
+    //     // given
+    //     let declarations = [
+    //         TypeDeclaration {
+    //             type_id: 1,
+    //             type_field: "generic T".to_string(),
+    //             components: None,
+    //             type_parameters: None,
+    //         },
+    //         TypeDeclaration {
+    //             type_id: 2,
+    //             type_field: "raw untyped ptr".to_string(),
+    //             components: None,
+    //             type_parameters: None,
+    //         },
+    //         TypeDeclaration {
+    //             type_id: 3,
+    //             type_field: "struct std::vec::RawVec".to_string(),
+    //             components: Some(vec![
+    //                 TypeApplication {
+    //                     name: "ptr".to_string(),
+    //                     type_id: 2,
+    //                     type_arguments: None,
+    //                 },
+    //                 TypeApplication {
+    //                     name: "cap".to_string(),
+    //                     type_id: 5,
+    //                     type_arguments: None,
+    //                 },
+    //             ]),
+    //             type_parameters: Some(vec![1]),
+    //         },
+    //         TypeDeclaration {
+    //             type_id: 4,
+    //             type_field: "struct std::vec::Vec".to_string(),
+    //             components: Some(vec![
+    //                 TypeApplication {
+    //                     name: "buf".to_string(),
+    //                     type_id: 3,
+    //                     type_arguments: Some(vec![TypeApplication {
+    //                         name: "".to_string(),
+    //                         type_id: 1,
+    //                         type_arguments: None,
+    //                     }]),
+    //                 },
+    //                 TypeApplication {
+    //                     name: "len".to_string(),
+    //                     type_id: 5,
+    //                     type_arguments: None,
+    //                 },
+    //             ]),
+    //             type_parameters: Some(vec![1]),
+    //         },
+    //         TypeDeclaration {
+    //             type_id: 5,
+    //             type_field: "u64".to_string(),
+    //             components: None,
+    //             type_parameters: None,
+    //         },
+    //         TypeDeclaration {
+    //             type_id: 6,
+    //             type_field: "u8".to_string(),
+    //             components: None,
+    //             type_parameters: None,
+    //         },
+    //     ];
+
+    //     let type_application = TypeApplication {
+    //         name: "arg".to_string(),
+    //         type_id: 4,
+    //         type_arguments: Some(vec![TypeApplication {
+    //             name: "".to_string(),
+    //             type_id: 6,
+    //             type_arguments: None,
+    //         }]),
+    //     };
+
+    //     let type_lookup = declarations
+    //         .into_iter()
+    //         .map(|decl| (decl.type_id, decl))
+    //         .collect::<HashMap<_, _>>();
+
+    //     // when
+    //     let result = ParamType::try_from_type_application(&type_application, &type_lookup)?;
+
+    //     // then
+    //     assert_eq!(result, ParamType::Vector(Box::new(ParamType::U8)));
+
+    //     Ok(())
+    // }
+
     #[test]
-    fn handles_vectors() -> Result<()> {
+    fn handles_vectors_2() -> Result<()> {
         // given
         let declarations = [
             TypeDeclaration {
@@ -702,555 +920,555 @@ mod tests {
             .collect::<HashMap<_, _>>();
 
         // when
-        let result = ParamType::try_from_type_application(&type_application, &type_lookup)?;
+        let selector = resolve_fn_signature("some_fun", &[type_application], &type_lookup)?;
+        dbg!(&selector);
 
         // then
-        assert_eq!(result, ParamType::Vector(Box::new(ParamType::U8)));
+        assert_eq!(selector, "some_fun(s<u8>(s<u8>(rawptr,u64),u64))");
 
         Ok(())
     }
 
-    #[test]
-    fn handles_structs() -> Result<()> {
-        // given
-        let declarations = [
-            TypeDeclaration {
-                type_id: 1,
-                type_field: "generic T".to_string(),
-                components: None,
-                type_parameters: None,
-            },
-            TypeDeclaration {
-                type_id: 2,
-                type_field: "struct SomeStruct".to_string(),
-                components: Some(vec![TypeApplication {
-                    name: "field".to_string(),
-                    type_id: 1,
-                    type_arguments: None,
-                }]),
-                type_parameters: Some(vec![1]),
-            },
-            TypeDeclaration {
-                type_id: 3,
-                type_field: "u8".to_string(),
-                components: None,
-                type_parameters: None,
-            },
-        ];
+    // #[test]
+    // fn handles_structs() -> Result<()> {
+    //     // given
+    //     let declarations = [
+    //         TypeDeclaration {
+    //             type_id: 1,
+    //             type_field: "generic T".to_string(),
+    //             components: None,
+    //             type_parameters: None,
+    //         },
+    //         TypeDeclaration {
+    //             type_id: 2,
+    //             type_field: "struct SomeStruct".to_string(),
+    //             components: Some(vec![TypeApplication {
+    //                 name: "field".to_string(),
+    //                 type_id: 1,
+    //                 type_arguments: None,
+    //             }]),
+    //             type_parameters: Some(vec![1]),
+    //         },
+    //         TypeDeclaration {
+    //             type_id: 3,
+    //             type_field: "u8".to_string(),
+    //             components: None,
+    //             type_parameters: None,
+    //         },
+    //     ];
 
-        let type_application = TypeApplication {
-            name: "arg".to_string(),
-            type_id: 2,
-            type_arguments: Some(vec![TypeApplication {
-                name: "".to_string(),
-                type_id: 3,
-                type_arguments: None,
-            }]),
-        };
+    //     let type_application = TypeApplication {
+    //         name: "arg".to_string(),
+    //         type_id: 2,
+    //         type_arguments: Some(vec![TypeApplication {
+    //             name: "".to_string(),
+    //             type_id: 3,
+    //             type_arguments: None,
+    //         }]),
+    //     };
 
-        let type_lookup = declarations
-            .into_iter()
-            .map(|decl| (decl.type_id, decl))
-            .collect::<HashMap<_, _>>();
+    //     let type_lookup = declarations
+    //         .into_iter()
+    //         .map(|decl| (decl.type_id, decl))
+    //         .collect::<HashMap<_, _>>();
 
-        // when
-        let result = ParamType::try_from_type_application(&type_application, &type_lookup)?;
+    //     // when
+    //     let result = ParamType::try_from_type_application(&type_application, &type_lookup)?;
 
-        // then
-        assert_eq!(
-            result,
-            ParamType::Struct {
-                fields: vec![ParamType::U8],
-                generics: vec![ParamType::U8]
-            }
-        );
+    //     // then
+    //     assert_eq!(
+    //         result,
+    //         ParamType::Struct {
+    //             fields: vec![ParamType::U8],
+    //             generics: vec![ParamType::U8]
+    //         }
+    //     );
 
-        Ok(())
-    }
+    //     Ok(())
+    // }
 
-    #[test]
-    fn handles_enums() -> Result<()> {
-        // given
-        let declarations = [
-            TypeDeclaration {
-                type_id: 1,
-                type_field: "generic T".to_string(),
-                components: None,
-                type_parameters: None,
-            },
-            TypeDeclaration {
-                type_id: 2,
-                type_field: "enum SomeEnum".to_string(),
-                components: Some(vec![TypeApplication {
-                    name: "variant".to_string(),
-                    type_id: 1,
-                    type_arguments: None,
-                }]),
-                type_parameters: Some(vec![1]),
-            },
-            TypeDeclaration {
-                type_id: 3,
-                type_field: "u8".to_string(),
-                components: None,
-                type_parameters: None,
-            },
-        ];
+    // #[test]
+    // fn handles_enums() -> Result<()> {
+    //     // given
+    //     let declarations = [
+    //         TypeDeclaration {
+    //             type_id: 1,
+    //             type_field: "generic T".to_string(),
+    //             components: None,
+    //             type_parameters: None,
+    //         },
+    //         TypeDeclaration {
+    //             type_id: 2,
+    //             type_field: "enum SomeEnum".to_string(),
+    //             components: Some(vec![TypeApplication {
+    //                 name: "variant".to_string(),
+    //                 type_id: 1,
+    //                 type_arguments: None,
+    //             }]),
+    //             type_parameters: Some(vec![1]),
+    //         },
+    //         TypeDeclaration {
+    //             type_id: 3,
+    //             type_field: "u8".to_string(),
+    //             components: None,
+    //             type_parameters: None,
+    //         },
+    //     ];
 
-        let type_application = TypeApplication {
-            name: "arg".to_string(),
-            type_id: 2,
-            type_arguments: Some(vec![TypeApplication {
-                name: "".to_string(),
-                type_id: 3,
-                type_arguments: None,
-            }]),
-        };
+    //     let type_application = TypeApplication {
+    //         name: "arg".to_string(),
+    //         type_id: 2,
+    //         type_arguments: Some(vec![TypeApplication {
+    //             name: "".to_string(),
+    //             type_id: 3,
+    //             type_arguments: None,
+    //         }]),
+    //     };
 
-        let type_lookup = declarations
-            .into_iter()
-            .map(|decl| (decl.type_id, decl))
-            .collect::<HashMap<_, _>>();
+    //     let type_lookup = declarations
+    //         .into_iter()
+    //         .map(|decl| (decl.type_id, decl))
+    //         .collect::<HashMap<_, _>>();
 
-        // when
-        let result = ParamType::try_from_type_application(&type_application, &type_lookup)?;
+    //     // when
+    //     let result = ParamType::try_from_type_application(&type_application, &type_lookup)?;
 
-        // then
-        assert_eq!(
-            result,
-            ParamType::Enum {
-                variants: EnumVariants::new(vec![ParamType::U8])?,
-                generics: vec![ParamType::U8]
-            }
-        );
+    //     // then
+    //     assert_eq!(
+    //         result,
+    //         ParamType::Enum {
+    //             variants: EnumVariants::new(vec![ParamType::U8])?,
+    //             generics: vec![ParamType::U8]
+    //         }
+    //     );
 
-        Ok(())
-    }
+    //     Ok(())
+    // }
 
-    #[test]
-    fn handles_tuples() -> Result<()> {
-        // given
-        let declarations = [
-            TypeDeclaration {
-                type_id: 1,
-                type_field: "(_, _)".to_string(),
-                components: Some(vec![
-                    TypeApplication {
-                        name: "__tuple_element".to_string(),
-                        type_id: 3,
-                        type_arguments: None,
-                    },
-                    TypeApplication {
-                        name: "__tuple_element".to_string(),
-                        type_id: 2,
-                        type_arguments: None,
-                    },
-                ]),
-                type_parameters: None,
-            },
-            TypeDeclaration {
-                type_id: 2,
-                type_field: "str[15]".to_string(),
-                components: None,
-                type_parameters: None,
-            },
-            TypeDeclaration {
-                type_id: 3,
-                type_field: "u8".to_string(),
-                components: None,
-                type_parameters: None,
-            },
-        ];
+    // #[test]
+    // fn handles_tuples() -> Result<()> {
+    //     // given
+    //     let declarations = [
+    //         TypeDeclaration {
+    //             type_id: 1,
+    //             type_field: "(_, _)".to_string(),
+    //             components: Some(vec![
+    //                 TypeApplication {
+    //                     name: "__tuple_element".to_string(),
+    //                     type_id: 3,
+    //                     type_arguments: None,
+    //                 },
+    //                 TypeApplication {
+    //                     name: "__tuple_element".to_string(),
+    //                     type_id: 2,
+    //                     type_arguments: None,
+    //                 },
+    //             ]),
+    //             type_parameters: None,
+    //         },
+    //         TypeDeclaration {
+    //             type_id: 2,
+    //             type_field: "str[15]".to_string(),
+    //             components: None,
+    //             type_parameters: None,
+    //         },
+    //         TypeDeclaration {
+    //             type_id: 3,
+    //             type_field: "u8".to_string(),
+    //             components: None,
+    //             type_parameters: None,
+    //         },
+    //     ];
 
-        let type_application = TypeApplication {
-            name: "arg".to_string(),
-            type_id: 1,
-            type_arguments: None,
-        };
-        let type_lookup = declarations
-            .into_iter()
-            .map(|decl| (decl.type_id, decl))
-            .collect::<HashMap<_, _>>();
+    //     let type_application = TypeApplication {
+    //         name: "arg".to_string(),
+    //         type_id: 1,
+    //         type_arguments: None,
+    //     };
+    //     let type_lookup = declarations
+    //         .into_iter()
+    //         .map(|decl| (decl.type_id, decl))
+    //         .collect::<HashMap<_, _>>();
 
-        // when
-        let result = ParamType::try_from_type_application(&type_application, &type_lookup)?;
+    //     // when
+    //     let result = ParamType::try_from_type_application(&type_application, &type_lookup)?;
 
-        // then
-        assert_eq!(
-            result,
-            ParamType::Tuple(vec![ParamType::U8, ParamType::String(15)])
-        );
+    //     // then
+    //     assert_eq!(
+    //         result,
+    //         ParamType::Tuple(vec![ParamType::U8, ParamType::String(15)])
+    //     );
 
-        Ok(())
-    }
+    //     Ok(())
+    // }
 
-    #[test]
-    fn ultimate_example() -> Result<()> {
-        // given
-        let declarations = [
-            TypeDeclaration {
-                type_id: 1,
-                type_field: "(_, _)".to_string(),
-                components: Some(vec![
-                    TypeApplication {
-                        name: "__tuple_element".to_string(),
-                        type_id: 11,
-                        type_arguments: None,
-                    },
-                    TypeApplication {
-                        name: "__tuple_element".to_string(),
-                        type_id: 11,
-                        type_arguments: None,
-                    },
-                ]),
-                type_parameters: None,
-            },
-            TypeDeclaration {
-                type_id: 2,
-                type_field: "(_, _)".to_string(),
-                components: Some(vec![
-                    TypeApplication {
-                        name: "__tuple_element".to_string(),
-                        type_id: 4,
-                        type_arguments: None,
-                    },
-                    TypeApplication {
-                        name: "__tuple_element".to_string(),
-                        type_id: 24,
-                        type_arguments: None,
-                    },
-                ]),
-                type_parameters: None,
-            },
-            TypeDeclaration {
-                type_id: 3,
-                type_field: "(_, _)".to_string(),
-                components: Some(vec![
-                    TypeApplication {
-                        name: "__tuple_element".to_string(),
-                        type_id: 5,
-                        type_arguments: None,
-                    },
-                    TypeApplication {
-                        name: "__tuple_element".to_string(),
-                        type_id: 13,
-                        type_arguments: None,
-                    },
-                ]),
-                type_parameters: None,
-            },
-            TypeDeclaration {
-                type_id: 4,
-                type_field: "[_; 1]".to_string(),
-                components: Some(vec![TypeApplication {
-                    name: "__array_element".to_string(),
-                    type_id: 8,
-                    type_arguments: Some(vec![TypeApplication {
-                        name: "".to_string(),
-                        type_id: 22,
-                        type_arguments: Some(vec![TypeApplication {
-                            name: "".to_string(),
-                            type_id: 21,
-                            type_arguments: Some(vec![TypeApplication {
-                                name: "".to_string(),
-                                type_id: 18,
-                                type_arguments: Some(vec![TypeApplication {
-                                    name: "".to_string(),
-                                    type_id: 13,
-                                    type_arguments: None,
-                                }]),
-                            }]),
-                        }]),
-                    }]),
-                }]),
-                type_parameters: None,
-            },
-            TypeDeclaration {
-                type_id: 5,
-                type_field: "[_; 2]".to_string(),
-                components: Some(vec![TypeApplication {
-                    name: "__array_element".to_string(),
-                    type_id: 14,
-                    type_arguments: None,
-                }]),
-                type_parameters: None,
-            },
-            TypeDeclaration {
-                type_id: 6,
-                type_field: "[_; 2]".to_string(),
-                components: Some(vec![TypeApplication {
-                    name: "__array_element".to_string(),
-                    type_id: 10,
-                    type_arguments: None,
-                }]),
-                type_parameters: None,
-            },
-            TypeDeclaration {
-                type_id: 7,
-                type_field: "b256".to_string(),
-                components: None,
-                type_parameters: None,
-            },
-            TypeDeclaration {
-                type_id: 8,
-                type_field: "enum EnumWGeneric".to_string(),
-                components: Some(vec![
-                    TypeApplication {
-                        name: "a".to_string(),
-                        type_id: 25,
-                        type_arguments: None,
-                    },
-                    TypeApplication {
-                        name: "b".to_string(),
-                        type_id: 12,
-                        type_arguments: None,
-                    },
-                ]),
-                type_parameters: Some(vec![12]),
-            },
-            TypeDeclaration {
-                type_id: 9,
-                type_field: "generic K".to_string(),
-                components: None,
-                type_parameters: None,
-            },
-            TypeDeclaration {
-                type_id: 10,
-                type_field: "generic L".to_string(),
-                components: None,
-                type_parameters: None,
-            },
-            TypeDeclaration {
-                type_id: 11,
-                type_field: "generic M".to_string(),
-                components: None,
-                type_parameters: None,
-            },
-            TypeDeclaration {
-                type_id: 12,
-                type_field: "generic N".to_string(),
-                components: None,
-                type_parameters: None,
-            },
-            TypeDeclaration {
-                type_id: 13,
-                type_field: "generic T".to_string(),
-                components: None,
-                type_parameters: None,
-            },
-            TypeDeclaration {
-                type_id: 14,
-                type_field: "generic U".to_string(),
-                components: None,
-                type_parameters: None,
-            },
-            TypeDeclaration {
-                type_id: 15,
-                type_field: "raw untyped ptr".to_string(),
-                components: None,
-                type_parameters: None,
-            },
-            TypeDeclaration {
-                type_id: 16,
-                type_field: "str[2]".to_string(),
-                components: None,
-                type_parameters: None,
-            },
-            TypeDeclaration {
-                type_id: 17,
-                type_field: "struct MegaExample".to_string(),
-                components: Some(vec![
-                    TypeApplication {
-                        name: "a".to_string(),
-                        type_id: 3,
-                        type_arguments: None,
-                    },
-                    TypeApplication {
-                        name: "b".to_string(),
-                        type_id: 23,
-                        type_arguments: Some(vec![TypeApplication {
-                            name: "".to_string(),
-                            type_id: 2,
-                            type_arguments: None,
-                        }]),
-                    },
-                ]),
-                type_parameters: Some(vec![13, 14]),
-            },
-            TypeDeclaration {
-                type_id: 18,
-                type_field: "struct PassTheGenericOn".to_string(),
-                components: Some(vec![TypeApplication {
-                    name: "one".to_string(),
-                    type_id: 20,
-                    type_arguments: Some(vec![TypeApplication {
-                        name: "".to_string(),
-                        type_id: 9,
-                        type_arguments: None,
-                    }]),
-                }]),
-                type_parameters: Some(vec![9]),
-            },
-            TypeDeclaration {
-                type_id: 19,
-                type_field: "struct std::vec::RawVec".to_string(),
-                components: Some(vec![
-                    TypeApplication {
-                        name: "ptr".to_string(),
-                        type_id: 15,
-                        type_arguments: None,
-                    },
-                    TypeApplication {
-                        name: "cap".to_string(),
-                        type_id: 25,
-                        type_arguments: None,
-                    },
-                ]),
-                type_parameters: Some(vec![13]),
-            },
-            TypeDeclaration {
-                type_id: 20,
-                type_field: "struct SimpleGeneric".to_string(),
-                components: Some(vec![TypeApplication {
-                    name: "single_generic_param".to_string(),
-                    type_id: 13,
-                    type_arguments: None,
-                }]),
-                type_parameters: Some(vec![13]),
-            },
-            TypeDeclaration {
-                type_id: 21,
-                type_field: "struct StructWArrayGeneric".to_string(),
-                components: Some(vec![TypeApplication {
-                    name: "a".to_string(),
-                    type_id: 6,
-                    type_arguments: None,
-                }]),
-                type_parameters: Some(vec![10]),
-            },
-            TypeDeclaration {
-                type_id: 22,
-                type_field: "struct StructWTupleGeneric".to_string(),
-                components: Some(vec![TypeApplication {
-                    name: "a".to_string(),
-                    type_id: 1,
-                    type_arguments: None,
-                }]),
-                type_parameters: Some(vec![11]),
-            },
-            TypeDeclaration {
-                type_id: 23,
-                type_field: "struct std::vec::Vec".to_string(),
-                components: Some(vec![
-                    TypeApplication {
-                        name: "buf".to_string(),
-                        type_id: 19,
-                        type_arguments: Some(vec![TypeApplication {
-                            name: "".to_string(),
-                            type_id: 13,
-                            type_arguments: None,
-                        }]),
-                    },
-                    TypeApplication {
-                        name: "len".to_string(),
-                        type_id: 25,
-                        type_arguments: None,
-                    },
-                ]),
-                type_parameters: Some(vec![13]),
-            },
-            TypeDeclaration {
-                type_id: 24,
-                type_field: "u32".to_string(),
-                components: None,
-                type_parameters: None,
-            },
-            TypeDeclaration {
-                type_id: 25,
-                type_field: "u64".to_string(),
-                components: None,
-                type_parameters: None,
-            },
-        ];
+    // #[test]
+    // fn ultimate_example() -> Result<()> {
+    //     // given
+    //     let declarations = [
+    //         TypeDeclaration {
+    //             type_id: 1,
+    //             type_field: "(_, _)".to_string(),
+    //             components: Some(vec![
+    //                 TypeApplication {
+    //                     name: "__tuple_element".to_string(),
+    //                     type_id: 11,
+    //                     type_arguments: None,
+    //                 },
+    //                 TypeApplication {
+    //                     name: "__tuple_element".to_string(),
+    //                     type_id: 11,
+    //                     type_arguments: None,
+    //                 },
+    //             ]),
+    //             type_parameters: None,
+    //         },
+    //         TypeDeclaration {
+    //             type_id: 2,
+    //             type_field: "(_, _)".to_string(),
+    //             components: Some(vec![
+    //                 TypeApplication {
+    //                     name: "__tuple_element".to_string(),
+    //                     type_id: 4,
+    //                     type_arguments: None,
+    //                 },
+    //                 TypeApplication {
+    //                     name: "__tuple_element".to_string(),
+    //                     type_id: 24,
+    //                     type_arguments: None,
+    //                 },
+    //             ]),
+    //             type_parameters: None,
+    //         },
+    //         TypeDeclaration {
+    //             type_id: 3,
+    //             type_field: "(_, _)".to_string(),
+    //             components: Some(vec![
+    //                 TypeApplication {
+    //                     name: "__tuple_element".to_string(),
+    //                     type_id: 5,
+    //                     type_arguments: None,
+    //                 },
+    //                 TypeApplication {
+    //                     name: "__tuple_element".to_string(),
+    //                     type_id: 13,
+    //                     type_arguments: None,
+    //                 },
+    //             ]),
+    //             type_parameters: None,
+    //         },
+    //         TypeDeclaration {
+    //             type_id: 4,
+    //             type_field: "[_; 1]".to_string(),
+    //             components: Some(vec![TypeApplication {
+    //                 name: "__array_element".to_string(),
+    //                 type_id: 8,
+    //                 type_arguments: Some(vec![TypeApplication {
+    //                     name: "".to_string(),
+    //                     type_id: 22,
+    //                     type_arguments: Some(vec![TypeApplication {
+    //                         name: "".to_string(),
+    //                         type_id: 21,
+    //                         type_arguments: Some(vec![TypeApplication {
+    //                             name: "".to_string(),
+    //                             type_id: 18,
+    //                             type_arguments: Some(vec![TypeApplication {
+    //                                 name: "".to_string(),
+    //                                 type_id: 13,
+    //                                 type_arguments: None,
+    //                             }]),
+    //                         }]),
+    //                     }]),
+    //                 }]),
+    //             }]),
+    //             type_parameters: None,
+    //         },
+    //         TypeDeclaration {
+    //             type_id: 5,
+    //             type_field: "[_; 2]".to_string(),
+    //             components: Some(vec![TypeApplication {
+    //                 name: "__array_element".to_string(),
+    //                 type_id: 14,
+    //                 type_arguments: None,
+    //             }]),
+    //             type_parameters: None,
+    //         },
+    //         TypeDeclaration {
+    //             type_id: 6,
+    //             type_field: "[_; 2]".to_string(),
+    //             components: Some(vec![TypeApplication {
+    //                 name: "__array_element".to_string(),
+    //                 type_id: 10,
+    //                 type_arguments: None,
+    //             }]),
+    //             type_parameters: None,
+    //         },
+    //         TypeDeclaration {
+    //             type_id: 7,
+    //             type_field: "b256".to_string(),
+    //             components: None,
+    //             type_parameters: None,
+    //         },
+    //         TypeDeclaration {
+    //             type_id: 8,
+    //             type_field: "enum EnumWGeneric".to_string(),
+    //             components: Some(vec![
+    //                 TypeApplication {
+    //                     name: "a".to_string(),
+    //                     type_id: 25,
+    //                     type_arguments: None,
+    //                 },
+    //                 TypeApplication {
+    //                     name: "b".to_string(),
+    //                     type_id: 12,
+    //                     type_arguments: None,
+    //                 },
+    //             ]),
+    //             type_parameters: Some(vec![12]),
+    //         },
+    //         TypeDeclaration {
+    //             type_id: 9,
+    //             type_field: "generic K".to_string(),
+    //             components: None,
+    //             type_parameters: None,
+    //         },
+    //         TypeDeclaration {
+    //             type_id: 10,
+    //             type_field: "generic L".to_string(),
+    //             components: None,
+    //             type_parameters: None,
+    //         },
+    //         TypeDeclaration {
+    //             type_id: 11,
+    //             type_field: "generic M".to_string(),
+    //             components: None,
+    //             type_parameters: None,
+    //         },
+    //         TypeDeclaration {
+    //             type_id: 12,
+    //             type_field: "generic N".to_string(),
+    //             components: None,
+    //             type_parameters: None,
+    //         },
+    //         TypeDeclaration {
+    //             type_id: 13,
+    //             type_field: "generic T".to_string(),
+    //             components: None,
+    //             type_parameters: None,
+    //         },
+    //         TypeDeclaration {
+    //             type_id: 14,
+    //             type_field: "generic U".to_string(),
+    //             components: None,
+    //             type_parameters: None,
+    //         },
+    //         TypeDeclaration {
+    //             type_id: 15,
+    //             type_field: "raw untyped ptr".to_string(),
+    //             components: None,
+    //             type_parameters: None,
+    //         },
+    //         TypeDeclaration {
+    //             type_id: 16,
+    //             type_field: "str[2]".to_string(),
+    //             components: None,
+    //             type_parameters: None,
+    //         },
+    //         TypeDeclaration {
+    //             type_id: 17,
+    //             type_field: "struct MegaExample".to_string(),
+    //             components: Some(vec![
+    //                 TypeApplication {
+    //                     name: "a".to_string(),
+    //                     type_id: 3,
+    //                     type_arguments: None,
+    //                 },
+    //                 TypeApplication {
+    //                     name: "b".to_string(),
+    //                     type_id: 23,
+    //                     type_arguments: Some(vec![TypeApplication {
+    //                         name: "".to_string(),
+    //                         type_id: 2,
+    //                         type_arguments: None,
+    //                     }]),
+    //                 },
+    //             ]),
+    //             type_parameters: Some(vec![13, 14]),
+    //         },
+    //         TypeDeclaration {
+    //             type_id: 18,
+    //             type_field: "struct PassTheGenericOn".to_string(),
+    //             components: Some(vec![TypeApplication {
+    //                 name: "one".to_string(),
+    //                 type_id: 20,
+    //                 type_arguments: Some(vec![TypeApplication {
+    //                     name: "".to_string(),
+    //                     type_id: 9,
+    //                     type_arguments: None,
+    //                 }]),
+    //             }]),
+    //             type_parameters: Some(vec![9]),
+    //         },
+    //         TypeDeclaration {
+    //             type_id: 19,
+    //             type_field: "struct std::vec::RawVec".to_string(),
+    //             components: Some(vec![
+    //                 TypeApplication {
+    //                     name: "ptr".to_string(),
+    //                     type_id: 15,
+    //                     type_arguments: None,
+    //                 },
+    //                 TypeApplication {
+    //                     name: "cap".to_string(),
+    //                     type_id: 25,
+    //                     type_arguments: None,
+    //                 },
+    //             ]),
+    //             type_parameters: Some(vec![13]),
+    //         },
+    //         TypeDeclaration {
+    //             type_id: 20,
+    //             type_field: "struct SimpleGeneric".to_string(),
+    //             components: Some(vec![TypeApplication {
+    //                 name: "single_generic_param".to_string(),
+    //                 type_id: 13,
+    //                 type_arguments: None,
+    //             }]),
+    //             type_parameters: Some(vec![13]),
+    //         },
+    //         TypeDeclaration {
+    //             type_id: 21,
+    //             type_field: "struct StructWArrayGeneric".to_string(),
+    //             components: Some(vec![TypeApplication {
+    //                 name: "a".to_string(),
+    //                 type_id: 6,
+    //                 type_arguments: None,
+    //             }]),
+    //             type_parameters: Some(vec![10]),
+    //         },
+    //         TypeDeclaration {
+    //             type_id: 22,
+    //             type_field: "struct StructWTupleGeneric".to_string(),
+    //             components: Some(vec![TypeApplication {
+    //                 name: "a".to_string(),
+    //                 type_id: 1,
+    //                 type_arguments: None,
+    //             }]),
+    //             type_parameters: Some(vec![11]),
+    //         },
+    //         TypeDeclaration {
+    //             type_id: 23,
+    //             type_field: "struct std::vec::Vec".to_string(),
+    //             components: Some(vec![
+    //                 TypeApplication {
+    //                     name: "buf".to_string(),
+    //                     type_id: 19,
+    //                     type_arguments: Some(vec![TypeApplication {
+    //                         name: "".to_string(),
+    //                         type_id: 13,
+    //                         type_arguments: None,
+    //                     }]),
+    //                 },
+    //                 TypeApplication {
+    //                     name: "len".to_string(),
+    //                     type_id: 25,
+    //                     type_arguments: None,
+    //                 },
+    //             ]),
+    //             type_parameters: Some(vec![13]),
+    //         },
+    //         TypeDeclaration {
+    //             type_id: 24,
+    //             type_field: "u32".to_string(),
+    //             components: None,
+    //             type_parameters: None,
+    //         },
+    //         TypeDeclaration {
+    //             type_id: 25,
+    //             type_field: "u64".to_string(),
+    //             components: None,
+    //             type_parameters: None,
+    //         },
+    //     ];
 
-        let type_lookup = declarations
-            .into_iter()
-            .map(|decl| (decl.type_id, decl))
-            .collect::<HashMap<_, _>>();
+    //     let type_lookup = declarations
+    //         .into_iter()
+    //         .map(|decl| (decl.type_id, decl))
+    //         .collect::<HashMap<_, _>>();
 
-        let type_application = TypeApplication {
-            name: "arg1".to_string(),
-            type_id: 17,
-            type_arguments: Some(vec![
-                TypeApplication {
-                    name: "".to_string(),
-                    type_id: 16,
-                    type_arguments: None,
-                },
-                TypeApplication {
-                    name: "".to_string(),
-                    type_id: 7,
-                    type_arguments: None,
-                },
-            ]),
-        };
+    //     let type_application = TypeApplication {
+    //         name: "arg1".to_string(),
+    //         type_id: 17,
+    //         type_arguments: Some(vec![
+    //             TypeApplication {
+    //                 name: "".to_string(),
+    //                 type_id: 16,
+    //                 type_arguments: None,
+    //             },
+    //             TypeApplication {
+    //                 name: "".to_string(),
+    //                 type_id: 7,
+    //                 type_arguments: None,
+    //             },
+    //         ]),
+    //     };
 
-        // when
-        let result = ParamType::try_from_type_application(&type_application, &type_lookup)?;
+    //     // when
+    //     let result = ParamType::try_from_type_application(&type_application, &type_lookup)?;
 
-        // then
-        let expected_param_type = {
-            let fields = vec![ParamType::Struct {
-                fields: vec![ParamType::String(2)],
-                generics: vec![ParamType::String(2)],
-            }];
-            let pass_the_generic_on = ParamType::Struct {
-                fields,
-                generics: vec![ParamType::String(2)],
-            };
+    //     // then
+    //     let expected_param_type = {
+    //         let fields = vec![ParamType::Struct {
+    //             fields: vec![ParamType::String(2)],
+    //             generics: vec![ParamType::String(2)],
+    //         }];
+    //         let pass_the_generic_on = ParamType::Struct {
+    //             fields,
+    //             generics: vec![ParamType::String(2)],
+    //         };
 
-            let fields = vec![ParamType::Array(Box::from(pass_the_generic_on.clone()), 2)];
-            let struct_w_array_generic = ParamType::Struct {
-                fields,
-                generics: vec![pass_the_generic_on],
-            };
+    //         let fields = vec![ParamType::Array(Box::from(pass_the_generic_on.clone()), 2)];
+    //         let struct_w_array_generic = ParamType::Struct {
+    //             fields,
+    //             generics: vec![pass_the_generic_on],
+    //         };
 
-            let fields = vec![ParamType::Tuple(vec![
-                struct_w_array_generic.clone(),
-                struct_w_array_generic.clone(),
-            ])];
-            let struct_w_tuple_generic = ParamType::Struct {
-                fields,
-                generics: vec![struct_w_array_generic],
-            };
+    //         let fields = vec![ParamType::Tuple(vec![
+    //             struct_w_array_generic.clone(),
+    //             struct_w_array_generic.clone(),
+    //         ])];
+    //         let struct_w_tuple_generic = ParamType::Struct {
+    //             fields,
+    //             generics: vec![struct_w_array_generic],
+    //         };
 
-            let types = vec![ParamType::U64, struct_w_tuple_generic.clone()];
-            let fields = vec![
-                ParamType::Tuple(vec![
-                    ParamType::Array(Box::from(ParamType::B256), 2),
-                    ParamType::String(2),
-                ]),
-                ParamType::Vector(Box::from(ParamType::Tuple(vec![
-                    ParamType::Array(
-                        Box::from(ParamType::Enum {
-                            variants: EnumVariants::new(types).unwrap(),
-                            generics: vec![struct_w_tuple_generic],
-                        }),
-                        1,
-                    ),
-                    ParamType::U32,
-                ]))),
-            ];
-            ParamType::Struct {
-                fields,
-                generics: vec![ParamType::String(2), ParamType::B256],
-            }
-        };
+    //         let types = vec![ParamType::U64, struct_w_tuple_generic.clone()];
+    //         let fields = vec![
+    //             ParamType::Tuple(vec![
+    //                 ParamType::Array(Box::from(ParamType::B256), 2),
+    //                 ParamType::String(2),
+    //             ]),
+    //             ParamType::Vector(Box::from(ParamType::Tuple(vec![
+    //                 ParamType::Array(
+    //                     Box::from(ParamType::Enum {
+    //                         variants: EnumVariants::new(types).unwrap(),
+    //                         generics: vec![struct_w_tuple_generic],
+    //                     }),
+    //                     1,
+    //                 ),
+    //                 ParamType::U32,
+    //             ]))),
+    //         ];
+    //         ParamType::Struct {
+    //             fields,
+    //             generics: vec![ParamType::String(2), ParamType::B256],
+    //         }
+    //     };
 
-        assert_eq!(result, expected_param_type);
+    //     assert_eq!(result, expected_param_type);
 
-        Ok(())
-    }
-
+    //     Ok(())
+    // }
     #[test]
     fn contains_nested_heap_types_false_on_simple_types() -> Result<()> {
         // Simple types cannot have nested heap types

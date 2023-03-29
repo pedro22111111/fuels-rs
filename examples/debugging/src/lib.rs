@@ -5,7 +5,10 @@ mod tests {
     use fuel_abi_types::program_abi::ProgramABI;
     use fuels::{
         core::function_selector::resolve_fn_selector,
-        types::{errors::Result, param_types::ParamType, traits::Parameterize, SizedAsciiString},
+        types::{
+            errors::Result, param_types::resolve_fn_selector as new_resolve_fn_selector,
+            traits::Parameterize, SizedAsciiString,
+        },
     };
 
     #[test]
@@ -42,13 +45,7 @@ mod tests {
             .find(|fun| fun.name == "array_of_structs")
             .unwrap();
 
-        let inputs = a_fun
-            .inputs
-            .into_iter()
-            .map(|type_appl| ParamType::try_from_type_application(&type_appl, &type_lookup))
-            .collect::<Result<Vec<_>>>()?;
-
-        let selector = resolve_fn_selector(&a_fun.name, &inputs);
+        let selector = new_resolve_fn_selector(&a_fun.name, &a_fun.inputs, &type_lookup)?;
 
         assert_eq!(selector, [0, 0, 0, 0, 39, 152, 108, 146,]);
         // ANCHOR_END: example_fn_selector_json

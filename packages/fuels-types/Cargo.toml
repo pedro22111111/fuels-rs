@@ -30,6 +30,7 @@ strum_macros = "0.21"
 itertools = "0.10.5"
 thiserror = { version = "1.0.26", default-features = false }
 fuels-macros = { workspace = true }
+sha2 = "0.9.5"
 
 [features]
 default = ["std"]
