@@ -145,10 +145,7 @@ impl ABIEncoder {
 mod tests {
     use std::slice;
 
-    use fuels_types::{
-        enum_variants::EnumVariants, errors::Result, param_types::first_four_bytes_of_sha256_hash,
-        param_types::ParamType,
-    };
+    use fuels_types::{enum_variants::EnumVariants, errors::Result, param_types::ParamType};
     use itertools::chain;
     use sha2::{Digest, Sha256};
 
@@ -156,17 +153,6 @@ mod tests {
 
     const VEC_METADATA_SIZE: usize = 3 * WORD_SIZE;
     const DISCRIMINANT_SIZE: usize = WORD_SIZE;
-
-    #[test]
-    fn encode_function_signature() {
-        let fn_signature = "entry_one(u64)";
-
-        let result = first_four_bytes_of_sha256_hash(fn_signature);
-
-        println!("Encoded function selector for ({fn_signature}): {result:#0x?}");
-
-        assert_eq!(result, [0x0, 0x0, 0x0, 0x0, 0x0c, 0x36, 0xcb, 0x9c]);
-    }
 
     #[test]
     fn encode_function_with_u32_type() -> Result<()> {
@@ -192,16 +178,11 @@ mod tests {
 
         let expected_encoded_abi = [0x0, 0x0, 0x0, 0x0, 0xff, 0xff, 0xff, 0xff];
 
-        let expected_function_selector = [0x0, 0x0, 0x0, 0x0, 0xb7, 0x9e, 0xf7, 0x43];
-
-        let encoded_function_selector = first_four_bytes_of_sha256_hash(fn_signature);
-
         let encoded = ABIEncoder::encode(&args)?.resolve(0);
 
         println!("Encoded ABI for ({fn_signature}): {encoded:#0x?}");
 
         assert_eq!(hex::encode(expected_encoded_abi), hex::encode(encoded));
-        assert_eq!(encoded_function_selector, expected_function_selector);
         Ok(())
     }
 
@@ -229,15 +210,11 @@ mod tests {
             0x0, 0x0, 0x0, 0x0, 0xff, 0xff, 0xff, 0xff, 0x0, 0x0, 0x0, 0x0, 0xff, 0xff, 0xff, 0xff,
         ];
 
-        let expected_fn_selector = [0x0, 0x0, 0x0, 0x0, 0xa7, 0x07, 0xb0, 0x8e];
-
-        let encoded_function_selector = first_four_bytes_of_sha256_hash(fn_signature);
         let encoded = ABIEncoder::encode(&args)?.resolve(0);
 
         println!("Encoded ABI for ({fn_signature}): {encoded:#0x?}");
 
         assert_eq!(hex::encode(expected_encoded_abi), hex::encode(encoded));
-        assert_eq!(encoded_function_selector, expected_fn_selector);
         Ok(())
     }
 
@@ -262,16 +239,11 @@ mod tests {
 
         let expected_encoded_abi = [0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff];
 
-        let expected_function_selector = [0x0, 0x0, 0x0, 0x0, 0x0c, 0x36, 0xcb, 0x9c];
-
-        let encoded_function_selector = first_four_bytes_of_sha256_hash(fn_signature);
-
         let encoded = ABIEncoder::encode(&args)?.resolve(0);
 
         println!("Encoded ABI for ({fn_signature}): {encoded:#0x?}");
 
         assert_eq!(hex::encode(expected_encoded_abi), hex::encode(encoded));
-        assert_eq!(encoded_function_selector, expected_function_selector);
         Ok(())
     }
 
@@ -296,16 +268,11 @@ mod tests {
 
         let expected_encoded_abi = [0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x1];
 
-        let expected_function_selector = [0x0, 0x0, 0x0, 0x0, 0x66, 0x8f, 0xff, 0x58];
-
-        let encoded_function_selector = first_four_bytes_of_sha256_hash(fn_signature);
-
         let encoded = ABIEncoder::encode(&args)?.resolve(0);
 
         println!("Encoded ABI for ({fn_signature}): {encoded:#0x?}");
 
         assert_eq!(hex::encode(expected_encoded_abi), hex::encode(encoded));
-        assert_eq!(encoded_function_selector, expected_function_selector);
         Ok(())
     }
 
@@ -333,16 +300,11 @@ mod tests {
             0x0, 0x0, 0x0, 0x0, 0xff, 0xff, 0xff, 0xff, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x1,
         ];
 
-        let expected_function_selector = [0x0, 0x0, 0x0, 0x0, 0xf5, 0x40, 0x73, 0x2b];
-
-        let encoded_function_selector = first_four_bytes_of_sha256_hash(fn_signature);
-
         let encoded = ABIEncoder::encode(&args)?.resolve(0);
 
         println!("Encoded ABI for ({fn_signature}): {encoded:#0x?}");
 
         assert_eq!(hex::encode(expected_encoded_abi), hex::encode(encoded));
-        assert_eq!(encoded_function_selector, expected_function_selector);
         Ok(())
     }
 
@@ -377,16 +339,11 @@ mod tests {
             0xf3, 0x1e, 0x93, 0xb,
         ];
 
-        let expected_function_selector = [0x0, 0x0, 0x0, 0x0, 0x01, 0x49, 0x42, 0x96];
-
-        let encoded_function_selector = first_four_bytes_of_sha256_hash(fn_signature);
-
         let encoded = ABIEncoder::encode(&args)?.resolve(0);
 
         println!("Encoded ABI for ({fn_signature}): {encoded:#0x?}");
 
         assert_eq!(hex::encode(expected_encoded_abi), hex::encode(encoded));
-        assert_eq!(encoded_function_selector, expected_function_selector);
         Ok(())
     }
 
@@ -421,16 +378,11 @@ mod tests {
             0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x3,
         ];
 
-        let expected_function_selector = [0x0, 0x0, 0x0, 0x0, 0x2c, 0x5a, 0x10, 0x2e];
-
-        let encoded_function_selector = first_four_bytes_of_sha256_hash(fn_signature);
-
         let encoded = ABIEncoder::encode(&args)?.resolve(0);
 
         println!("Encoded ABI for ({fn_signature}): {encoded:#0x?}");
 
         assert_eq!(hex::encode(expected_encoded_abi), hex::encode(encoded));
-        assert_eq!(encoded_function_selector, expected_function_selector);
         Ok(())
     }
 
@@ -460,16 +412,11 @@ mod tests {
             0x20, 0x73, 0x65, 0x6e, 0x74, 0x65, 0x6e, 0x63, 0x65, 0x00,
         ];
 
-        let expected_function_selector = [0x0, 0x0, 0x0, 0x0, 0xd5, 0x6e, 0x76, 0x51];
-
-        let encoded_function_selector = first_four_bytes_of_sha256_hash(fn_signature);
-
         let encoded = ABIEncoder::encode(&args)?.resolve(0);
 
         println!("Encoded ABI for ({fn_signature}): {encoded:#0x?}");
 
         assert_eq!(hex::encode(expected_encoded_abi), hex::encode(encoded));
-        assert_eq!(encoded_function_selector, expected_function_selector);
         Ok(())
     }
 
@@ -506,16 +453,11 @@ mod tests {
             0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x1, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x1,
         ];
 
-        let expected_function_selector = [0x0, 0x0, 0x0, 0x0, 0xa8, 0x1e, 0x8d, 0xd7];
-
-        let encoded_function_selector = first_four_bytes_of_sha256_hash(fn_signature);
-
         let encoded = ABIEncoder::encode(&args)?.resolve(0);
 
         println!("Encoded ABI for ({fn_signature}): {encoded:#0x?}");
 
         assert_eq!(hex::encode(expected_encoded_abi), hex::encode(encoded));
-        assert_eq!(encoded_function_selector, expected_function_selector);
         Ok(())
     }
 
@@ -532,8 +474,6 @@ mod tests {
         //     }
         // ]
         // "#;
-
-        let fn_signature = "takes_my_enum(MyEnum)";
 
         // enum MyEnum {
         //     x: u32,
@@ -556,14 +496,9 @@ mod tests {
             0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x2a,
         ];
 
-        let expected_function_selector = [0x0, 0x0, 0x0, 0x0, 0x35, 0x5c, 0xa6, 0xfa];
-
-        let encoded_function_selector = first_four_bytes_of_sha256_hash(fn_signature);
-
         let encoded = ABIEncoder::encode(&args)?.resolve(0);
 
         assert_eq!(hex::encode(expected_encoded_abi), hex::encode(encoded));
-        assert_eq!(encoded_function_selector, expected_function_selector);
         Ok(())
     }
 
@@ -706,16 +641,11 @@ mod tests {
             0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x1, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x2,
         ];
 
-        let expected_function_selector = [0x0, 0x0, 0x0, 0x0, 0xea, 0x0a, 0xfd, 0x23];
-
-        let encoded_function_selector = first_four_bytes_of_sha256_hash(fn_signature);
-
         let encoded = ABIEncoder::encode(&args)?.resolve(0);
 
         println!("Encoded ABI for ({fn_signature}): {encoded:#0x?}");
 
         assert_eq!(hex::encode(expected_encoded_abi), hex::encode(encoded));
-        assert_eq!(encoded_function_selector, expected_function_selector);
         Ok(())
     }
 
@@ -760,8 +690,6 @@ mod tests {
         //     b: u8[2],
         // }
 
-        let fn_signature = "long_function(Foo,u8[2],b256,str[23])";
-
         let foo = Token::Struct(vec![
             Token::U16(10),
             Token::Struct(vec![
@@ -797,14 +725,9 @@ mod tests {
             0x65, 0x6e, 0x74, 0x65, 0x6e, 0x63, 0x65, 0x0, // str[23]
         ];
 
-        let expected_function_selector = [0x0, 0x0, 0x0, 0x0, 0x10, 0x93, 0xb2, 0x12];
-
-        let encoded_function_selector = first_four_bytes_of_sha256_hash(fn_signature);
-
         let encoded = ABIEncoder::encode(&args)?.resolve(0);
 
         assert_eq!(hex::encode(expected_encoded_abi), hex::encode(encoded));
-        assert_eq!(encoded_function_selector, expected_function_selector);
         Ok(())
     }
 

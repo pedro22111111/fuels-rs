@@ -11,6 +11,7 @@ pub mod constants;
 mod core;
 pub mod enum_variants;
 pub mod errors;
+pub mod fn_selector;
 pub mod input;
 pub mod message;
 pub mod message_proof;

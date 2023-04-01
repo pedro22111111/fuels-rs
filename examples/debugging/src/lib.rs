@@ -2,13 +2,11 @@
 mod tests {
     use std::collections::HashMap;
 
-    use fuel_abi_types::program_abi::ProgramABI;
-    use fuels::{
-        core::function_selector::resolve_fn_selector,
-        types::{
-            errors::Result, param_types::resolve_fn_selector as new_resolve_fn_selector,
-            traits::Parameterize, SizedAsciiString,
-        },
+    use fuel_abi_types::{
+        fn_selector::resolve_fn_selector as new_resolve_fn_selector, program_abi::ProgramABI,
+    };
+    use fuels::types::{
+        errors::Result, fn_selector::resolve_fn_selector, traits::Parameterize, SizedAsciiString,
     };
 
     #[test]
@@ -45,7 +43,7 @@ mod tests {
             .find(|fun| fun.name == "array_of_structs")
             .unwrap();
 
-        let selector = new_resolve_fn_selector(&a_fun.name, &a_fun.inputs, &type_lookup)?;
+        let selector = new_resolve_fn_selector(&a_fun.name, &a_fun.inputs, &type_lookup).unwrap();
 
         assert_eq!(selector, [0, 0, 0, 0, 39, 152, 108, 146,]);
         // ANCHOR_END: example_fn_selector_json

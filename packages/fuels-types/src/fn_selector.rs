@@ -1,13 +1,13 @@
-use fuels_types::{
-    param_types::first_four_bytes_of_sha256_hash, param_types::ParamType, ByteArray,
-};
+use fuel_abi_types::fn_selector::first_eight_bytes_of_sha256_hash;
+
+use crate::param_types::ParamType;
 
 /// Given a function name and its inputs  will return a ByteArray representing
 /// the function selector as specified in the Fuel specs.
-pub fn resolve_fn_selector(name: &str, inputs: &[ParamType]) -> ByteArray {
+pub fn resolve_fn_selector(name: &str, inputs: &[ParamType]) -> [u8; 8] {
     let fn_signature = resolve_fn_signature(name, inputs);
 
-    first_four_bytes_of_sha256_hash(&fn_signature)
+    first_eight_bytes_of_sha256_hash(&fn_signature)
 }
 
 fn resolve_fn_signature(name: &str, inputs: &[ParamType]) -> String {
@@ -77,9 +77,8 @@ fn resolve_arg(arg: &ParamType) -> String {
 
 #[cfg(test)]
 mod tests {
-    use fuels_types::enum_variants::EnumVariants;
-
     use super::*;
+    use crate::enum_variants::EnumVariants;
 
     #[test]
     fn handles_primitive_types() {
