@@ -21,33 +21,4 @@ mod tests {
         assert_eq!(selector, [0, 0, 0, 0, 7, 161, 3, 203]);
         // ANCHOR_END: example_fn_selector
     }
-
-    #[test]
-    fn a_fn_selector_from_json_abi() -> Result<()> {
-        let json_abi_file =
-            "../../packages/fuels/tests/contracts/contract_test/out/debug/contract_test-abi.json";
-        let abi_file_contents = std::fs::read_to_string(json_abi_file)?;
-
-        // ANCHOR: example_fn_selector_json
-        let abi: ProgramABI = serde_json::from_str(&abi_file_contents)?;
-
-        let type_lookup = abi
-            .types
-            .into_iter()
-            .map(|a_type| (a_type.type_id, a_type))
-            .collect::<HashMap<_, _>>();
-
-        let a_fun = abi
-            .functions
-            .into_iter()
-            .find(|fun| fun.name == "array_of_structs")
-            .unwrap();
-
-        let selector = new_resolve_fn_selector(&a_fun.name, &a_fun.inputs, &type_lookup).unwrap();
-
-        assert_eq!(selector, [0, 0, 0, 0, 39, 152, 108, 146,]);
-        // ANCHOR_END: example_fn_selector_json
-
-        Ok(())
-    }
 }

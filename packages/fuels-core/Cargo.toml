@@ -18,6 +18,9 @@ hex = { version = "0.4.3", features = ["std"] }
 itertools = "0.10"
 sha2 = "0.9.5"
 
+[dev-dependencies]
+fuels-macros = { workspace = true }
+
 [features]
 default = ["std"]
 std = ["fuels-types/std"]

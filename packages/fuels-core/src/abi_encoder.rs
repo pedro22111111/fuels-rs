@@ -168,11 +168,9 @@ fn zeropad_to_word_alignment(data: &mut Vec<u8>) {
 
 #[cfg(test)]
 mod tests {
-    use std::slice;
-
-    use fuels_types::{enum_variants::EnumVariants, errors::Result, param_types::ParamType};
+    use fuels_macros::{Parameterize, Tokenizable};
+    use fuels_types::{errors::Result, traits::Tokenizable, Bits256, SizedAsciiString};
     use itertools::chain;
-    use sha2::{Digest, Sha256};
 
     use super::*;
 
@@ -180,561 +178,247 @@ mod tests {
     const DISCRIMINANT_SIZE: usize = WORD_SIZE;
 
     #[test]
-    fn encode_function_with_u32_type() -> Result<()> {
-        // @todo eventually we must update the json abi examples in here.
-        // They're in the old format.
-        //
-        // let json_abi =
-        // r#"
-        // [
-        //     {
-        //         "type":"function",
-        //         "inputs": [{"name":"arg","type":"u32"}],
-        //         "name":"entry_one",
-        //         "outputs": []
-        //     }
-        // ]
-        // "#;
-
-        let fn_signature = "entry_one(u32)";
-        let arg = Token::U32(u32::MAX);
-
-        let args: Vec<Token> = vec![arg];
-
-        let expected_encoded_abi = [0x0, 0x0, 0x0, 0x0, 0xff, 0xff, 0xff, 0xff];
-
-        let encoded = ABIEncoder::encode(&args)?.resolve(0);
-
-        println!("Encoded ABI for ({fn_signature}): {encoded:#0x?}");
-
-        assert_eq!(hex::encode(expected_encoded_abi), hex::encode(encoded));
-        Ok(())
+    fn encoding_u32() {
+        assert_expected_encoding(
+            u32::MAX.into_token(),
+            &[0x0, 0x0, 0x0, 0x0, 0xff, 0xff, 0xff, 0xff],
+        );
     }
 
     #[test]
-    fn encode_function_with_u32_type_multiple_args() -> Result<()> {
-        // let json_abi =
-        // r#"
-        // [
-        //     {
-        //         "type":"function",
-        //         "inputs": [{"name":"first","type":"u32"},{"name":"second","type":"u32"}],
-        //         "name":"takes_two",
-        //         "outputs": []
-        //     }
-        // ]
-        // "#;
-
-        let fn_signature = "takes_two(u32,u32)";
-        let first = Token::U32(u32::MAX);
-        let second = Token::U32(u32::MAX);
-
-        let args: Vec<Token> = vec![first, second];
-
-        let expected_encoded_abi = [
-            0x0, 0x0, 0x0, 0x0, 0xff, 0xff, 0xff, 0xff, 0x0, 0x0, 0x0, 0x0, 0xff, 0xff, 0xff, 0xff,
-        ];
-
-        let encoded = ABIEncoder::encode(&args)?.resolve(0);
-
-        println!("Encoded ABI for ({fn_signature}): {encoded:#0x?}");
-
-        assert_eq!(hex::encode(expected_encoded_abi), hex::encode(encoded));
-        Ok(())
+    fn encoding_u64() {
+        assert_expected_encoding(
+            u64::MAX.into_token(),
+            &[0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff],
+        );
     }
 
     #[test]
-    fn encode_function_with_u64_type() -> Result<()> {
-        // let json_abi =
-        // r#"
-        // [
-        //     {
-        //         "type":"function",
-        //         "inputs": [{"name":"arg","type":"u64"}],
-        //         "name":"entry_one",
-        //         "outputs": []
-        //     }
-        // ]
-        // "#;
-
-        let fn_signature = "entry_one(u64)";
-        let arg = Token::U64(u64::MAX);
-
-        let args: Vec<Token> = vec![arg];
-
-        let expected_encoded_abi = [0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff];
-
-        let encoded = ABIEncoder::encode(&args)?.resolve(0);
-
-        println!("Encoded ABI for ({fn_signature}): {encoded:#0x?}");
-
-        assert_eq!(hex::encode(expected_encoded_abi), hex::encode(encoded));
-        Ok(())
+    fn encode_function_with_bool_type() {
+        assert_expected_encoding(true.into_token(), &[0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x1]);
     }
 
     #[test]
-    fn encode_function_with_bool_type() -> Result<()> {
-        // let json_abi =
-        // r#"
-        // [
-        //     {
-        //         "type":"function",
-        //         "inputs": [{"name":"arg","type":"bool"}],
-        //         "name":"bool_check",
-        //         "outputs": []
-        //     }
-        // ]
-        // "#;
-
-        let fn_signature = "bool_check(bool)";
-        let arg = Token::Bool(true);
-
-        let args: Vec<Token> = vec![arg];
-
-        let expected_encoded_abi = [0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x1];
-
-        let encoded = ABIEncoder::encode(&args)?.resolve(0);
-
-        println!("Encoded ABI for ({fn_signature}): {encoded:#0x?}");
-
-        assert_eq!(hex::encode(expected_encoded_abi), hex::encode(encoded));
-        Ok(())
-    }
-
-    #[test]
-    fn encode_function_with_two_different_type() -> Result<()> {
-        // let json_abi =
-        // r#"
-        // [
-        //     {
-        //         "type":"function",
-        //         "inputs": [{"name":"first","type":"u32"},{"name":"second","type":"bool"}],
-        //         "name":"takes_two_types",
-        //         "outputs": []
-        //     }
-        // ]
-        // "#;
-
-        let fn_signature = "takes_two_types(u32,bool)";
-        let first = Token::U32(u32::MAX);
-        let second = Token::Bool(true);
-
-        let args: Vec<Token> = vec![first, second];
-
-        let expected_encoded_abi = [
-            0x0, 0x0, 0x0, 0x0, 0xff, 0xff, 0xff, 0xff, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x1,
-        ];
-
-        let encoded = ABIEncoder::encode(&args)?.resolve(0);
-
-        println!("Encoded ABI for ({fn_signature}): {encoded:#0x?}");
-
-        assert_eq!(hex::encode(expected_encoded_abi), hex::encode(encoded));
-        Ok(())
-    }
-
-    #[test]
-    fn encode_function_with_bits256_type() -> Result<()> {
-        // let json_abi =
-        // r#"
-        // [
-        //     {
-        //         "type":"function",
-        //         "inputs": [{"name":"arg","type":"b256"}],
-        //         "name":"takes_bits256",
-        //         "outputs": []
-        //     }
-        // ]
-        // "#;
-
-        let fn_signature = "takes_bits256(b256)";
-
-        let mut hasher = Sha256::new();
-        hasher.update("test string".as_bytes());
-
-        let arg = hasher.finalize();
-
-        let arg = Token::B256(arg.into());
-
-        let args: Vec<Token> = vec![arg];
-
-        let expected_encoded_abi = [
+    fn encode_function_with_bits256_type() {
+        let bytes = [
             0xd5, 0x57, 0x9c, 0x46, 0xdf, 0xcc, 0x7f, 0x18, 0x20, 0x70, 0x13, 0xe6, 0x5b, 0x44,
             0xe4, 0xcb, 0x4e, 0x2c, 0x22, 0x98, 0xf4, 0xac, 0x45, 0x7b, 0xa8, 0xf8, 0x27, 0x43,
             0xf3, 0x1e, 0x93, 0xb,
         ];
 
-        let encoded = ABIEncoder::encode(&args)?.resolve(0);
+        assert_expected_encoding(Token::B256(bytes), &bytes);
+    }
 
-        println!("Encoded ABI for ({fn_signature}): {encoded:#0x?}");
+    fn assert_expected_encoding(token: Token, expected_encoding: &[u8]) {
+        let encoded = ABIEncoder::encode(&[token]).unwrap().resolve(0);
 
-        assert_eq!(hex::encode(expected_encoded_abi), hex::encode(encoded));
-        Ok(())
+        assert_eq!(&encoded, expected_encoding)
     }
 
     #[test]
-    fn encode_function_with_array_type() -> Result<()> {
-        // let json_abi =
-        // r#"
-        // [
-        //     {
-        //         "type":"function",
-        //         "inputs": [{"name":"arg","type":"u8[3]"}],
-        //         "name":"takes_integer_array",
-        //         "outputs": []
-        //     }
-        // ]
-        // "#;
+    fn array_u8_encoding() {
+        let token = [1u8, 2, 3].into_token();
 
-        let fn_signature = "takes_integer_array(u8[3])";
-
-        // Keeping the construction of the arguments array separate for better readability.
-        let first = Token::U8(1);
-        let second = Token::U8(2);
-        let third = Token::U8(3);
-
-        let arg = vec![first, second, third];
-        let arg_array = Token::Array(arg);
-
-        let args: Vec<Token> = vec![arg_array];
-
-        let expected_encoded_abi = [
+        let expected = [
             0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x1, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x2, 0x0,
             0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x3,
         ];
 
-        let encoded = ABIEncoder::encode(&args)?.resolve(0);
-
-        println!("Encoded ABI for ({fn_signature}): {encoded:#0x?}");
-
-        assert_eq!(hex::encode(expected_encoded_abi), hex::encode(encoded));
-        Ok(())
+        assert_expected_encoding(token, &expected);
     }
 
     #[test]
-    fn encode_function_with_string_type() -> Result<()> {
-        // let json_abi =
-        // r#"
-        // [
-        //     {
-        //         "type":"function",
-        //         "inputs": [{"name":"arg","type":"str[23]"}],
-        //         "name":"takes_string",
-        //         "outputs": []
-        //     }
-        // ]
-        // "#;
+    fn string_encoding() {
+        let token = Token::String(StringToken::new("This is a full sentence".into(), 23));
 
-        let fn_signature = "takes_string(str[23])";
-
-        let args: Vec<Token> = vec![Token::String(StringToken::new(
-            "This is a full sentence".into(),
-            23,
-        ))];
-
-        let expected_encoded_abi = [
+        let expected = [
             0x54, 0x68, 0x69, 0x73, 0x20, 0x69, 0x73, 0x20, 0x61, 0x20, 0x66, 0x75, 0x6c, 0x6c,
             0x20, 0x73, 0x65, 0x6e, 0x74, 0x65, 0x6e, 0x63, 0x65, 0x00,
         ];
 
-        let encoded = ABIEncoder::encode(&args)?.resolve(0);
-
-        println!("Encoded ABI for ({fn_signature}): {encoded:#0x?}");
-
-        assert_eq!(hex::encode(expected_encoded_abi), hex::encode(encoded));
-        Ok(())
+        assert_expected_encoding(token, &expected);
     }
 
     #[test]
-    fn encode_function_with_struct() -> Result<()> {
-        // let json_abi =
-        // r#"
-        // [
-        //     {
-        //         "type":"function",
-        //         "inputs": [{"name":"arg","type":"MyStruct"}],
-        //         "name":"takes_my_struct",
-        //         "outputs": []
-        //     }
-        // ]
-        // "#;
+    fn encode_function_with_struct() {
+        #[derive(Parameterize, Tokenizable)]
+        #[FuelsTypesPath("fuels_types")]
+        struct SomeStruct {
+            field_a: u8,
+            field_b: bool,
+        }
 
-        let fn_signature = "takes_my_struct(MyStruct)";
+        let token = SomeStruct {
+            field_a: 1,
+            field_b: true,
+        }
+        .into_token();
 
-        // struct MyStruct {
-        //     foo: u8,
-        //     bar: bool,
-        // }
-
-        let foo = Token::U8(1);
-        let bar = Token::Bool(true);
-
-        // Create the custom struct token using the array of tuples above
-        let arg = Token::Struct(vec![foo, bar]);
-
-        let args: Vec<Token> = vec![arg];
-
-        let expected_encoded_abi = [
+        let expected = [
             0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x1, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x1,
         ];
 
-        let encoded = ABIEncoder::encode(&args)?.resolve(0);
-
-        println!("Encoded ABI for ({fn_signature}): {encoded:#0x?}");
-
-        assert_eq!(hex::encode(expected_encoded_abi), hex::encode(encoded));
-        Ok(())
+        assert_expected_encoding(token, &expected);
     }
 
     #[test]
-    fn encode_function_with_enum() -> Result<()> {
-        // let json_abi =
-        // r#"
-        // [
-        //     {
-        //         "type":"function",
-        //         "inputs": [{"name":"arg","type":"MyEnum"}],
-        //         "name":"takes_my_enum",
-        //         "outputs": []
-        //     }
-        // ]
-        // "#;
+    fn encode_function_with_enum() {
+        #[derive(Parameterize, Tokenizable)]
+        #[FuelsTypesPath("fuels_types")]
+        enum SomeEnum {
+            V1(u32),
+            V2(bool),
+        }
 
-        // enum MyEnum {
-        //     x: u32,
-        //     y: bool,
-        // }
-        let types = vec![ParamType::U32, ParamType::Bool];
-        let params = EnumVariants::new(types)?;
+        let token = SomeEnum::V1(42).into_token();
 
-        // An `EnumSelector` indicating that we've chosen the first Enum variant,
-        // whose value is 42 of the type ParamType::U32 and that the Enum could
-        // have held any of the other types present in `params`.
-
-        let enum_selector = Box::new((0, Token::U32(42), params));
-
-        let arg = Token::Enum(enum_selector);
-
-        let args: Vec<Token> = vec![arg];
-
-        let expected_encoded_abi = [
+        let expected = [
             0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x2a,
         ];
 
-        let encoded = ABIEncoder::encode(&args)?.resolve(0);
-
-        assert_eq!(hex::encode(expected_encoded_abi), hex::encode(encoded));
-        Ok(())
+        assert_expected_encoding(token, &expected);
     }
 
-    // The encoding follows the ABI specs defined  [here](https://github.com/FuelLabs/fuel-specs/blob/master/specs/protocol/abi.md)
     #[test]
-    fn enums_are_sized_to_fit_the_biggest_variant() -> Result<()> {
-        // Our enum has two variants: B256, and U64. So the enum will set aside
-        // 256b of space or 4 WORDS because that is the space needed to fit the
-        // largest variant(B256).
-        let types = vec![ParamType::B256, ParamType::U64];
-        let enum_variants = EnumVariants::new(types)?;
-        let enum_selector = Box::new((1, Token::U64(42), enum_variants));
-
-        let encoded = ABIEncoder::encode(slice::from_ref(&Token::Enum(enum_selector)))?.resolve(0);
+    fn enums_are_padded_to_the_size_of_the_biggest_variant() -> Result<()> {
+        #[derive(Parameterize, Tokenizable)]
+        #[FuelsTypesPath("fuels_types")]
+        enum SomeEnum {
+            V1(Bits256),
+            V2(u64),
+        }
+        let token = SomeEnum::V2(42).into_token();
 
         let enum_discriminant_enc = vec![0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x1];
-        let u64_enc = vec![0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x2a];
         let enum_padding = vec![0x0; 24];
+        let u64_enc = vec![0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x2a];
 
-        // notice the ordering, first the discriminant, then the necessary
-        // padding and then the value itself.
-        let expected: Vec<u8> = [enum_discriminant_enc, enum_padding, u64_enc]
-            .into_iter()
-            .flatten()
-            .collect();
+        let expected: Vec<u8> = [enum_discriminant_enc, enum_padding, u64_enc].concat();
 
-        assert_eq!(hex::encode(expected), hex::encode(encoded));
+        assert_expected_encoding(token, &expected);
+
         Ok(())
     }
 
     #[test]
     fn encoding_enums_with_deeply_nested_types() -> Result<()> {
-        /*
-        enum DeeperEnum {
-            v1: bool,
-            v2: str[10]
+        #[derive(Parameterize, Tokenizable)]
+        #[FuelsTypesPath("fuels_types")]
+        enum TopLevelEnum {
+            V1(SomeStruct),
+            V2(bool),
+            V3(u64),
         }
-         */
-        let types = vec![ParamType::Bool, ParamType::String(10)];
-        let deeper_enum_variants = EnumVariants::new(types)?;
-        let deeper_enum_token = Token::String(StringToken::new("0123456789".into(), 10));
 
+        #[derive(Parameterize, Tokenizable)]
+        #[FuelsTypesPath("fuels_types")]
+        struct SomeStruct {
+            deeper_enum: DeeperEnum,
+            some_number: u32,
+        }
+
+        #[derive(Parameterize, Tokenizable)]
+        #[FuelsTypesPath("fuels_types")]
+        enum DeeperEnum {
+            V1(bool),
+            V2(SizedAsciiString<10>),
+        }
+
+        let token = TopLevelEnum::V1(SomeStruct {
+            deeper_enum: DeeperEnum::V2("0123456789".try_into()?),
+            some_number: 11332,
+        })
+        .into_token();
+
+        let top_lvl_discriminant_enc = vec![0x0; 8];
+        let deeper_enum_discriminant_enc = vec![0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x1];
+        let some_number_enc = vec![0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x2c, 0x44];
         let str_enc = vec![
             b'0', b'1', b'2', b'3', b'4', b'5', b'6', b'7', b'8', b'9', 0x0, 0x0, 0x0, 0x0, 0x0,
             0x0,
         ];
-        let deeper_enum_discriminant_enc = vec![0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x1];
-
-        /*
-        struct StructA {
-            some_enum: DeeperEnum
-            some_number: u32
-        }
-         */
-
-        let fields = vec![
-            ParamType::Enum {
-                variants: deeper_enum_variants.clone(),
-                generics: vec![],
-            },
-            ParamType::Bool,
-        ];
-        let struct_a_type = ParamType::Struct {
-            fields,
-            generics: vec![],
-        };
-
-        let struct_a_token = Token::Struct(vec![
-            Token::Enum(Box::new((1, deeper_enum_token, deeper_enum_variants))),
-            Token::U32(11332),
-        ]);
-        let some_number_enc = vec![0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x2c, 0x44];
-
-        /*
-         enum TopLevelEnum {
-            v1: StructA,
-            v2: bool,
-            v3: u64
-        }
-        */
-
-        let types = vec![struct_a_type, ParamType::Bool, ParamType::U64];
-        let top_level_enum_variants = EnumVariants::new(types)?;
-        let top_level_enum_token =
-            Token::Enum(Box::new((0, struct_a_token, top_level_enum_variants)));
-        let top_lvl_discriminant_enc = vec![0x0; 8];
-
-        let encoded = ABIEncoder::encode(slice::from_ref(&top_level_enum_token))?.resolve(0);
-
         let correct_encoding: Vec<u8> = [
             top_lvl_discriminant_enc,
             deeper_enum_discriminant_enc,
             str_enc,
             some_number_enc,
         ]
-        .into_iter()
-        .flatten()
-        .collect();
+        .concat();
 
-        assert_eq!(hex::encode(correct_encoding), hex::encode(encoded));
+        assert_expected_encoding(token, &correct_encoding);
+
         Ok(())
     }
 
     #[test]
     fn encode_function_with_nested_structs() -> Result<()> {
-        // let json_abi =
-        // r#"
-        // [
-        //     {
-        //         "type":"function",
-        //         "inputs": [{"name":"arg","type":"Foo"}],
-        //         "name":"takes_my_nested_struct",
-        //         "outputs": []
-        //     }
-        // ]
-        // "#;
+        #[derive(Parameterize, Tokenizable)]
+        #[FuelsTypesPath("fuels_types")]
+        struct Foo {
+            x: u16,
+            y: Bar,
+        }
 
-        // struct Foo {
-        //     x: u16,
-        //     y: Bar,
-        // }
-        //
-        // struct Bar {
-        //     a: bool,
-        //     b: u8[2],
-        // }
+        #[derive(Parameterize, Tokenizable)]
+        #[FuelsTypesPath("fuels_types")]
+        struct Bar {
+            a: bool,
+            b: [u8; 2],
+        }
 
-        let fn_signature = "takes_my_nested_struct(Foo)";
+        let token = Foo {
+            x: 10,
+            y: Bar { a: true, b: [1, 2] },
+        }
+        .into_token();
 
-        let args: Vec<Token> = vec![Token::Struct(vec![
-            Token::U16(10),
-            Token::Struct(vec![
-                Token::Bool(true),
-                Token::Array(vec![Token::U8(1), Token::U8(2)]),
-            ]),
-        ])];
-
-        let expected_encoded_abi = [
+        let expected = [
             0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0xa, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x1, 0x0,
             0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x1, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x2,
         ];
 
-        let encoded = ABIEncoder::encode(&args)?.resolve(0);
+        assert_expected_encoding(token, &expected);
 
-        println!("Encoded ABI for ({fn_signature}): {encoded:#0x?}");
-
-        assert_eq!(hex::encode(expected_encoded_abi), hex::encode(encoded));
         Ok(())
     }
 
     #[test]
     fn encode_comprehensive_function() -> Result<()> {
-        // let json_abi =
-        // r#"
-        // [
-        //     {
-        //         "type": "contract",
-        //         "inputs": [
-        //         {
-        //             "name": "arg",
-        //             "type": "Foo"
-        //         },
-        //         {
-        //             "name": "arg2",
-        //             "type": "u8[2]"
-        //         },
-        //         {
-        //             "name": "arg3",
-        //             "type": "b256"
-        //         },
-        //         {
-        //             "name": "arg",
-        //             "type": "str[23]"
-        //         }
-        //         ],
-        //         "name": "long_function",
-        //         "outputs": []
-        //     }
-        // ]
-        // "#;
+        #[derive(Parameterize, Tokenizable)]
+        #[FuelsTypesPath("fuels_types")]
+        struct Foo {
+            x: u16,
+            y: Bar,
+        }
 
-        // struct Foo {
-        //     x: u16,
-        //     y: Bar,
-        // }
-        //
-        // struct Bar {
-        //     a: bool,
-        //     b: u8[2],
-        // }
+        #[derive(Parameterize, Tokenizable)]
+        #[FuelsTypesPath("fuels_types")]
+        struct Bar {
+            a: bool,
+            b: [u8; 2],
+        }
 
-        let foo = Token::Struct(vec![
-            Token::U16(10),
-            Token::Struct(vec![
-                Token::Bool(true),
-                Token::Array(vec![Token::U8(1), Token::U8(2)]),
-            ]),
-        ]);
+        let foo = Foo {
+            x: 10,
+            y: Bar { a: true, b: [1, 2] },
+        }
+        .into_token();
 
-        let u8_arr = Token::Array(vec![Token::U8(1), Token::U8(2)]);
+        let u8_arr = [1u8, 2].into_token();
 
-        let mut hasher = Sha256::new();
-        hasher.update("test string".as_bytes());
+        let b256_bytes = [
+            0xd5, 0x57, 0x9c, 0x46, 0xdf, 0xcc, 0x7f, 0x18, 0x20, 0x70, 0x13, 0xe6, 0x5b, 0x44,
+            0xe4, 0xcb, 0x4e, 0x2c, 0x22, 0x98, 0xf4, 0xac, 0x45, 0x7b, 0xa8, 0xf8, 0x27, 0x43,
+            0xf3, 0x1e, 0x93, 0xb,
+        ];
 
-        let b256 = Token::B256(hasher.finalize().into());
+        let b256 = Token::B256(b256_bytes);
 
-        let s = Token::String(StringToken::new("This is a full sentence".into(), 23));
+        let string = Token::String(StringToken::new("This is a full sentence".into(), 23));
 
-        let args: Vec<Token> = vec![foo, u8_arr, b256, s];
+        let encoded = ABIEncoder::encode(&[foo, u8_arr, b256, string])?.resolve(0);
 
-        let expected_encoded_abi = [
+        let expected = vec![
             0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0xa, // foo.x == 10u16
             0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x1, // foo.y.a == true
             0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x1, // foo.b.0 == 1u8
@@ -750,56 +434,66 @@ mod tests {
             0x65, 0x6e, 0x74, 0x65, 0x6e, 0x63, 0x65, 0x0, // str[23]
         ];
 
-        let encoded = ABIEncoder::encode(&args)?.resolve(0);
-
-        assert_eq!(hex::encode(expected_encoded_abi), hex::encode(encoded));
+        assert_eq!(expected, encoded);
         Ok(())
     }
 
     #[test]
-    fn enums_with_only_unit_variants_are_encoded_in_one_word() -> Result<()> {
-        let expected = [0, 0, 0, 0, 0, 0, 0, 1];
+    fn enums_with_only_unit_variants_are_encoded_in_one_word() {
+        #[derive(Parameterize, Tokenizable)]
+        #[FuelsTypesPath("fuels_types")]
+        enum OnlyUnits {
+            V1,
+            V2,
+        }
 
-        let types = vec![ParamType::Unit, ParamType::Unit];
-        let enum_selector = Box::new((1, Token::Unit, EnumVariants::new(types)?));
+        let token = OnlyUnits::V2.into_token();
 
-        let actual = ABIEncoder::encode(&[Token::Enum(enum_selector)])?.resolve(0);
-
-        assert_eq!(actual, expected);
-        Ok(())
+        assert_expected_encoding(token, &[0, 0, 0, 0, 0, 0, 0, 1]);
     }
 
     #[test]
-    fn units_in_composite_types_are_encoded_in_one_word() -> Result<()> {
+    fn units_in_composite_types_are_encoded_in_one_word() {
+        #[derive(Parameterize, Tokenizable)]
+        #[FuelsTypesPath("fuels_types")]
+        struct HasUnits {
+            unit: (),
+            number: u32,
+        }
+
+        let token = HasUnits {
+            unit: (),
+            number: 5,
+        }
+        .into_token();
         let expected = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 5];
 
-        let actual =
-            ABIEncoder::encode(&[Token::Struct(vec![Token::Unit, Token::U32(5)])])?.resolve(0);
-
-        assert_eq!(actual, expected);
-        Ok(())
+        assert_expected_encoding(token, &expected);
     }
 
     #[test]
-    fn enums_with_units_are_correctly_padded() -> Result<()> {
+    fn enums_with_units_are_correctly_padded() {
+        #[derive(Parameterize, Tokenizable)]
+        #[FuelsTypesPath("fuels_types")]
+        enum HasUnits {
+            V1(Bits256),
+            V2,
+        }
+
+        let token = HasUnits::V2.into_token();
+
         let discriminant = vec![0, 0, 0, 0, 0, 0, 0, 1];
         let padding = vec![0; 32];
-        let expected: Vec<u8> = [discriminant, padding].into_iter().flatten().collect();
+        let expected: Vec<u8> = [discriminant, padding].concat();
 
-        let types = vec![ParamType::B256, ParamType::Unit];
-        let enum_selector = Box::new((1, Token::Unit, EnumVariants::new(types)?));
-
-        let actual = ABIEncoder::encode(&[Token::Enum(enum_selector)])?.resolve(0);
-
-        assert_eq!(actual, expected);
-        Ok(())
+        assert_expected_encoding(token, &expected);
     }
 
     #[test]
     fn vector_has_ptr_cap_len_and_then_data() -> Result<()> {
         // arrange
         let offset: u8 = 150;
-        let token = Token::Vector(vec![Token::U64(5)]);
+        let token = vec![5u64].into_token();
 
         // act
         let result = ABIEncoder::encode(&[token])?.resolve(offset as u64);
@@ -821,8 +515,8 @@ mod tests {
     fn data_from_two_vectors_aggregated_at_the_end() -> Result<()> {
         // arrange
         let offset: u8 = 40;
-        let vec_1 = Token::Vector(vec![Token::U64(5)]);
-        let vec_2 = Token::Vector(vec![Token::U64(6)]);
+        let vec_1 = vec![5u64].into_token();
+        let vec_2 = vec![6u64].into_token();
 
         // act
         let result = ABIEncoder::encode(&[vec_1, vec_2])?.resolve(offset as u64);
@@ -853,11 +547,15 @@ mod tests {
     #[test]
     fn a_vec_in_an_enum() -> Result<()> {
         // arrange
+        #[derive(Parameterize, Tokenizable)]
+        #[FuelsTypesPath("fuels_types")]
+        enum HasVec {
+            V1(Bits256),
+            V2(Vec<u64>),
+        }
+
         let offset = 40;
-        let types = vec![ParamType::B256, ParamType::Vector(Box::new(ParamType::U64))];
-        let variants = EnumVariants::new(types)?;
-        let selector = (1, Token::Vector(vec![Token::U64(5)]), variants);
-        let token = Token::Enum(Box::new(selector));
+        let token = HasVec::V2(vec![5]).into_token();
 
         // act
         let result = ABIEncoder::encode(&[token])?.resolve(offset as u64);
@@ -892,13 +590,14 @@ mod tests {
     #[test]
     fn an_enum_in_a_vec() -> Result<()> {
         // arrange
+        #[derive(Parameterize, Tokenizable)]
+        #[FuelsTypesPath("fuels_types")]
+        enum SomeEnum {
+            V1(Bits256),
+            V2(u8),
+        }
         let offset = 40;
-        let types = vec![ParamType::B256, ParamType::U8];
-        let variants = EnumVariants::new(types)?;
-        let selector = (1, Token::U8(8), variants);
-        let enum_token = Token::Enum(Box::new(selector));
-
-        let vec_token = Token::Vector(vec![enum_token]);
+        let vec_token = vec![SomeEnum::V2(8)].into_token();
 
         // act
         let result = ABIEncoder::encode(&[vec_token])?.resolve(offset as u64);
@@ -922,8 +621,19 @@ mod tests {
     #[test]
     fn a_vec_in_a_struct() -> Result<()> {
         // arrange
+        #[derive(Parameterize, Tokenizable)]
+        #[FuelsTypesPath("fuels_types")]
+        struct HasAVec {
+            the_vec: Vec<u64>,
+            number: u8,
+        }
+
         let offset = 40;
-        let token = Token::Struct(vec![Token::Vector(vec![Token::U64(5)]), Token::U8(9)]);
+        let token = HasAVec {
+            the_vec: vec![5],
+            number: 9,
+        }
+        .into_token();
 
         // act
         let result = ABIEncoder::encode(&[token])?.resolve(offset as u64);
@@ -954,7 +664,7 @@ mod tests {
     fn a_vec_in_a_vec() -> Result<()> {
         // arrange
         let offset = 40;
-        let token = Token::Vector(vec![Token::Vector(vec![Token::U8(5), Token::U8(6)])]);
+        let token = vec![vec![5u8, 6]].into_token();
 
         // act
         let result = ABIEncoder::encode(&[token])?.resolve(offset as u64);

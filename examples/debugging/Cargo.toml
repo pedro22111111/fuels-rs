@@ -10,7 +10,7 @@ repository = "https://github.com/FuelLabs/fuels-rs"
 description = "Fuel Rust SDK debugging examples."
 
 [dependencies]
-# TODO: revert this
+# TODO: waiting for a new release of fuel-abi-types
 fuel-abi-types = { git = "https://github.com/FuelLabs/fuel-abi-types", branch = "hal3e-segfault-magnet/independent_fn_sel_resolving" }
 fuels = { workspace = true }
 rand = "0.8.5"

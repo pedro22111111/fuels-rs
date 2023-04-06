@@ -17,7 +17,7 @@ chrono = "0.4.2"
 fuel-tx = { workspace = true }
 fuel-types = { workspace = true, features = ["default"] }
 fuel-asm = { workspace = true }
-# TODO: revert this
+# TODO: waiting for a new release of fuel-abi-types
 fuel-abi-types = { git = "https://github.com/FuelLabs/fuel-abi-types", branch = "hal3e-segfault-magnet/independent_fn_sel_resolving" }
 fuel-core = { workspace = true, default-features = false, optional = true }
 fuel-core-chain-config = { workspace = true }
