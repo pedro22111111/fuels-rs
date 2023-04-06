@@ -140,22 +140,17 @@ impl ParamType {
             | ParamType::U32
             | ParamType::U64
             | ParamType::Bool => 1,
-            ParamType::Vector(_) => 3,
+            ParamType::RawSlice => 2,
+            ParamType::Vector(_) | ParamType::Bytes => 3,
             ParamType::B256 => 4,
             ParamType::Array(param, count) => param.compute_encoding_width() * count,
             ParamType::String(len) => count_words(*len),
-            ParamType::Struct { fields, .. } => {
-                fields.iter().map(|param_type| param_type.compute_encoding_width()).sum()
-            }
+            ParamType::Struct { fields, .. } => fields
+                .iter()
+                .map(|param_type| param_type.compute_encoding_width())
+                .sum(),
             ParamType::Enum { variants, .. } => variants.compute_encoding_width_of_enum(),
             ParamType::Tuple(params) => params.iter().map(|p| p.compute_encoding_width()).sum(),
-            // The ParamType::RawSlice is basically a wrapper around a U8 vector
-            ParamType::RawSlice => unimplemented!(
-                "Raw slices are not supported as inputs, so needing the encoding width of a RawSlice should not happen."
-            ),
-            ParamType::Bytes => unimplemented!(
-                "Bytes are not supported as inputs, so needing the encoding width of a Bytes should not happen."
-            ),
         }
     }
 }
