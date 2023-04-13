@@ -6,7 +6,9 @@ use chrono::{DateTime, NaiveDateTime, Utc};
 use fuel_core_client::client::types::{
     TransactionResponse as ClientTransactionResponse, TransactionStatus as ClientTransactionStatus,
 };
-use fuel_tx::{Bytes32, Transaction};
+use fuel_tx::Bytes32;
+use fuel_tx::trnasact
+use fuel_types::transaction::Transaction;
 
 #[derive(Debug, Clone)]
 pub struct TransactionResponse {

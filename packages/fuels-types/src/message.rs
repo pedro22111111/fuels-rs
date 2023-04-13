@@ -5,6 +5,7 @@ use fuel_core_client::client::schema::message::{
     Message as ClientMessage, MessageStatus as ClientMessageStatus,
 };
 use fuel_tx::{Input, MessageId};
+use fuel_types::Nonce;
 
 use crate::bech32::Bech32Address;
 
@@ -20,7 +21,7 @@ pub struct Message {
     pub amount: u64,
     pub sender: Bech32Address,
     pub recipient: Bech32Address,
-    pub nonce: u64,
+    pub nonce: Nonce,
     pub data: Vec<u8>,
     pub da_height: u64,
     pub status: MessageStatus,
@@ -31,7 +32,7 @@ impl Message {
         Input::compute_message_id(
             &(&self.sender).into(),
             &(&self.recipient).into(),
-            self.nonce,
+            &self.nonce,
             self.amount,
             &self.data,
         )
@@ -44,7 +45,7 @@ impl From<ClientMessage> for Message {
             amount: message.amount.0,
             sender: message.sender.0 .0.into(),
             recipient: message.recipient.0 .0.into(),
-            nonce: message.nonce.0,
+            nonce: message.nonce.0.into(),
             data: message.data.0 .0,
             da_height: message.da_height.0,
             status: MessageStatus::from(message.status),
@@ -66,7 +67,7 @@ impl From<Message> for MessageConfig {
         MessageConfig {
             sender: message.sender.into(),
             recipient: message.recipient.into(),
-            nonce: message.nonce,
+            nonce: u64::from_be_bytes(message.nonce[..8].into()),
             amount: message.amount,
             data: message.data,
             da_height: message.da_height.into(),
